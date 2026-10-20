@@ -1,4 +1,18 @@
 'use strict';
+
+const fs = require('fs');
+
+function getSerperKey() {
+  if (process.env.SERPER_API_KEY) return process.env.SERPER_API_KEY;
+  try {
+    const v = fs.readFileSync('/etc/secrets/SERPER_API_KEY', 'utf8').trim();
+    if (v) return v;
+  } catch {
+    // secret file not present
+  }
+  return null;
+}
+
 // Web search provider for auto-discovery.
 //
 // Honest capability note: every keyless search engine (DuckDuckGo HTML, Bing
@@ -20,7 +34,9 @@ class SearchUnavailableError extends Error {
 
 // Returns an array of result URL strings for a query.
 async function searchWeb(query, { num = 10 } = {}) {
-  const key = process.env.SERPER_API_KEY;
+  // Key comes from either an environment variable or a Render Secret File
+  // (/etc/secrets/SERPER_API_KEY). Whichever is configured wins.
+  const key = getSerperKey();
   if (!key) {
     throw new SearchUnavailableError(
       'Auto-discovery needs a search API key. Add SERPER_API_KEY in Render (Environment tab). A free key is available at serper.dev (2,500 searches/month).'
