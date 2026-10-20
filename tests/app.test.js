@@ -310,7 +310,7 @@ test('landing and app pages serve, unknown API paths 404', async (t) => {
   assert.ok((await landing.text()).includes('SaaS Shield'));
   const appHtml = await fetch(ROOT + '/app');
   assert.equal(appHtml.status, 200);
-  const css = await fetch(ROOT + '/styles.css');
+  const css = await fetch(ROOT + '/styles.a2f20d8f.css');
   assert.equal(css.status, 200);
   const noRoute = await fetch(BASE + '/nothing');
   assert.ok([401, 404].includes(noRoute.status), 'unknown api path must not leak anything');

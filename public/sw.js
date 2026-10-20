@@ -2,12 +2,12 @@
 /* SaaS Shield service worker: offline shell for static assets only.
    API calls (/api/*) are NEVER cached - scan data must always be live. */
 
-const CACHE = 'saas-shield-v5';
+const CACHE = 'saas-shield-v6';
 const SHELL = [
   '/',
   '/app',
-  '/styles.css',
-  '/app.js',
+  '/styles.a2f20d8f.css',
+  '/app.d2fd09e0.js',
   '/manifest.webmanifest',
   '/icon-192.png',
   '/icon-512.png',
