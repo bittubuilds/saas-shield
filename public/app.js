@@ -47,33 +47,39 @@ function fmtScore(x) { return (Math.round((x ?? 0) * 1000) / 10).toFixed(1) + '%
 function hostOf(u) { try { return new URL(u).host; } catch { return u; } }
 
 function loading() { return `<div class="loading"><div class="spinner"></div> Loading...</div>`; }
-function emptyState(icon, title, sub) {
-  return `<div class="empty"><div class="big">${icon}</div><h3>${esc(title)}</h3><p class="muted small">${esc(sub)}</p></div>`;
+
+const GLYPHS = {
+  globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+  bolt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
+  doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-6M9 15h6"/></svg>',
+  book: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4H6.5A2.5 2.5 0 0 0 4 6.5v13z"/></svg>'
+};
+function emptyState(glyph, title, sub) {
+  return `<div class="empty"><div class="glyph">${GLYPHS[glyph] || GLYPHS.doc}</div><h3>${esc(title)}</h3><p class="muted small">${esc(sub)}</p></div>`;
 }
 async function showError(e) { toast(e.message, 'error'); }
-
-function highlightPassage(p, kind) {
-  // In passage rows we show the shared text as-is; excerpts come pre-stored.
-  return esc(p);
-}
 
 // ---------------------------------------------------------------------------
 // shell
 // ---------------------------------------------------------------------------
+const LOGO_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 3v6c0 5-3.5 8.5-8 11-4.5-2.5-8-6-8-11V5l8-3z"/></svg>';
+
 const ICONS = {
-  dash: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
-  sites: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
-  scans: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>',
-  results: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
-  settings: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.4 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.4-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.2-.8.2-1.2z"/></svg>',
-  signout: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>'
+  dash: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
+  sites: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+  scans: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>',
+  results: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
+  settings: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.4 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.4-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.2-.8.2-1.2z"/></svg>',
+  signout: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>',
+  home: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V10z"/></svg>'
 };
 
 const NAV = [
   ['#/dashboard', 'Dashboard', 'dash'],
   ['#/websites', 'Websites', 'sites'],
   ['#/scans', 'Scans', 'scans'],
-  ['#/results', 'Results', 'results'],
+  ['#/results', 'Findings', 'results'],
   ['#/settings', 'Settings', 'settings']
 ];
 
@@ -86,12 +92,15 @@ function shell(content, activeRoute) {
   return `
   <div class="shell">
     <aside class="sidebar">
-      <a class="logo" href="#/dashboard"><span class="logo-mark">&#128737;</span> SaaS Shield</a>
-      <div class="small muted" style="padding:0 12px 12px;">${esc(ws ? ws.name : '')}</div>
+      <a class="logo" href="#/dashboard"><span class="logo-mark">${LOGO_SVG}</span> SaaS Shield</a>
+      <div class="ws-chip">${esc(ws ? ws.name : '')}</div>
       ${links}
       <div class="spacer"></div>
-      <a class="navlink" href="/" >${ICONS.signout.replace('class="ic"','class="ic"')} Back to site</a>
-      <button class="navlink" style="width:100%;border:none;background:none;text-align:left" id="signoutBtn">${ICONS.signout} Sign out</button>
+      <div class="sidebar-foot">
+        <div class="user-chip" title="${esc(me ? me.user.email : '')}">${esc(me ? me.user.email : '')}</div>
+        <a class="navlink" href="/">${ICONS.home} Back to site</a>
+        <button class="navlink" style="width:100%;border:none;background:none;text-align:left" id="signoutBtn">${ICONS.signout} Sign out</button>
+      </div>
     </aside>
     <main class="main" id="main">${content}</main>
     <nav class="mobile-nav">${mobileLinks}</nav>
@@ -106,23 +115,20 @@ function authView(mode = 'signin') {
   return `
   <div class="auth-wrap">
     <div class="auth-card">
-      <div style="text-align:center; margin-bottom:18px;">
-        <a class="logo" href="/"><span class="logo-mark">&#128737;</span> SaaS Shield</a>
-      </div>
+      <div class="auth-brand"><a class="logo" href="/"><span class="logo-mark">${LOGO_SVG}</span> SaaS Shield</a></div>
       <div class="card">
-        <h2>${isSignup ? 'Create your account' : 'Sign in'}</h2>
-        <p class="muted small">${isSignup ? 'A workspace is created automatically.' : 'Welcome back.'}</p>
+        <h2>${isSignup ? 'Create your account' : 'Welcome back'}</h2>
+        <p class="subhead">${isSignup ? 'A workspace is created automatically.' : 'Sign in to your workspace.'}</p>
         <form id="authForm" novalidate>
-          ${isSignup ? `<div class="field"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" required></div>` :
-            `<div class="field"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" required></div>`}
+          <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" required></div>
           <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="${isSignup ? 'new-password' : 'current-password'}" minlength="8" required>
             ${isSignup ? '<div class="hint">At least 8 characters.</div>' : ''}</div>
           ${isSignup ? `<div class="field"><label for="wsname">Workspace name</label><input id="wsname" name="workspace_name" placeholder="My startup"></div>` : ''}
           <div class="form-error" id="authError" role="alert"></div>
-          <button class="btn block" type="submit">${isSignup ? 'Create account' : 'Sign in'}</button>
+          <button class="btn block" type="submit">${isSignup ? 'Create account' : 'Log in'}</button>
         </form>
-        <p class="small muted" style="margin-top:14px; text-align:center;">
-          ${isSignup ? `Already registered? <a href="#/signin">Sign in</a>` : `New here? <a href="#/signup">Create an account</a>`}
+        <p class="small muted" style="margin-top:16px; text-align:center;">
+          ${isSignup ? `Already registered? <a href="#/signin">Log in</a>` : `New here? <a href="#/signup">Create an account</a>`}
         </p>
       </div>
     </div>
@@ -131,7 +137,7 @@ function authView(mode = 'signin') {
 
 async function dashboardView() {
   const d = await api(`/workspaces/${wsId}/dashboard`);
-  const statCard = (label, num, sub) => `<div class="stat"><div class="lbl">${label}</div><div class="num">${num}</div>${sub ? `<div class="small muted">${sub}</div>` : ''}</div>`;
+  const statCard = (label, num, sub) => `<div class="stat"><div class="lbl">${label}</div><div class="num">${num}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
   return `
   <div class="page-head">
     <div><h1>Dashboard</h1><p>Real data from your workspace - no sample records.</p></div>
@@ -141,31 +147,31 @@ async function dashboardView() {
     </div>
   </div>
   <div class="grid cols-4">
-    ${statCard('WEBSITES MONITORED', d.monitored_websites)}
-    ${statCard('SCANS COMPLETED', d.scans_completed, 'Last success: ' + fmtDate(d.last_successful_scan))}
-    ${statCard('POTENTIAL MATCHES', d.findings_total, `${d.findings_needing_review} need review · ${d.findings_confirmed} confirmed`)}
-    ${statCard('SCAN FAILURES', d.scans_failed, d.scans_failed > 0 ? 'Check scan history for next steps' : 'None')}
+    ${statCard('Websites monitored', d.monitored_websites)}
+    ${statCard('Scans completed', d.scans_completed, 'Last success: ' + fmtDate(d.last_successful_scan))}
+    ${statCard('Potential matches', d.findings_total, `${d.findings_needing_review} need review &middot; ${d.findings_confirmed} confirmed`)}
+    ${statCard('Scan failures', d.scans_failed, d.scans_failed > 0 ? 'Check scan history for next steps' : 'None')}
   </div>
   ${d.failing_websites && d.failing_websites.length ? `
-    <div class="card" style="margin-top:18px; border-color:rgba(248,113,113,.35);">
+    <div class="card" style="margin-top:16px; border-color:rgba(248,113,113,.35);">
       <h3>Crawl failures</h3>
-      ${d.failing_websites.map((f) => `<p class="small"><strong>${esc(f.submitted_url)}</strong><br><span class="muted">${esc(f.crawl_error || 'Unknown error')}</span> - verify the URL is public and reachable, then retry a scan.</p>`).join('')}
+      ${d.failing_websites.map((f) => `<p class="small" style="margin:0 0 10px;"><strong>${esc(f.submitted_url)}</strong><br><span class="muted">${esc(f.crawl_error || 'Unknown error')}</span> - verify the URL is public and reachable, then retry a scan.</p>`).join('')}
     </div>` : ''}
-  <div class="grid cols-2" style="margin-top:18px;">
+  <div class="grid cols-2" style="margin-top:16px;">
     <div class="card">
       <h3>Recent scans</h3>
-      ${d.recent_scans.length === 0 ? emptyState('&#128230;', 'No scans yet', 'Add an original and a comparison website, then run your first scan.') :
+      ${d.recent_scans.length === 0 ? emptyState('bolt', 'No scans yet', 'Add an original and a comparison website, then run your first scan.') :
       `<table><thead><tr><th>Websites</th><th>Status</th><th>Findings</th><th>When</th></tr></thead><tbody>
       ${d.recent_scans.map((s) => `<tr><td>${esc(hostOf(s.original_url))} &rarr; ${esc(hostOf(s.comparison_url))}</td>
-        <td><span class="badge ${s.status}">${s.status}</span></td><td>${s.findings ?? '-'}</td><td class="muted small">${fmtDate(s.finished_at || s.created_at)}</td></tr>`).join('')}
+        <td><span class="badge ${s.status}">${s.status}</span></td><td class="num">${s.findings ?? '-'}</td><td class="muted small">${fmtDate(s.finished_at || s.created_at)}</td></tr>`).join('')}
       </tbody></table>`}
     </div>
     <div class="card">
       <h3>Recent potential matches</h3>
-      ${d.recent_results.length === 0 ? emptyState('&#128269;', 'No findings yet', 'Potential matches appear here once a scan finds shared passages.') :
+      ${d.recent_results.length === 0 ? emptyState('search', 'No findings yet', 'Potential matches appear here once a scan finds shared passages.') :
       `<table><thead><tr><th>Pages</th><th>Score</th><th>Status</th></tr></thead><tbody>
       ${d.recent_results.map((r) => `<tr class="clickable" data-result="${esc(r.id)}"><td><span class="small">${esc(hostOf(r.original_url))} vs ${esc(hostOf(r.comparison_url))}</span></td>
-        <td>${fmtScore(r.jaccard_score)}</td><td><span class="badge ${r.status}">${r.status.replace('_', ' ')}</span></td></tr>`).join('')}
+        <td class="num">${fmtScore(r.jaccard_score)}</td><td><span class="badge ${r.status}">${r.status.replace('_', ' ')}</span></td></tr>`).join('')}
       </tbody></table>`}
     </div>
   </div>`;
@@ -178,7 +184,7 @@ async function websitesView() {
     <div><h1>Websites</h1><p>Your original site plus comparison sites to check against.</p></div>
     <button class="btn" id="addSiteBtn">Add website</button>
   </div>
-  <div id="addSiteForm" style="display:none; margin-bottom:18px;" class="card">
+  <div id="addSiteForm" style="display:none; margin-bottom:16px;" class="card">
     <h3>Add a website</h3>
     <form id="siteForm" novalidate>
       <div class="grid cols-2">
@@ -192,17 +198,17 @@ async function websitesView() {
       <button class="btn" type="submit">Add website</button>
     </form>
   </div>
-  ${websites.length === 0 ? emptyState('&#127760;', 'No websites registered', 'Add your original website first, then add competitor sites to compare.') :
+  ${websites.length === 0 ? emptyState('globe', 'No websites registered', 'Add your original website first, then add competitor sites to compare.') :
   `<div class="card" style="padding:0; overflow-x:auto;">
     <table>
       <thead><tr><th>Role</th><th>URL</th><th>Status</th><th>Crawl</th><th>Pages</th><th>Last scanned</th><th></th></tr></thead>
       <tbody>
       ${websites.map((w) => `<tr>
-        <td><span class="badge ${w.kind === 'original' ? 'long_passage' : ''}">${w.kind}</span></td>
-        <td><div class="url-cell mono">${esc(w.url)}</div>${w.label ? `<div class="small muted">${esc(w.label)}</div>` : ''}</td>
+        <td><span class="badge ${w.kind === 'original' ? 'original' : ''}">${w.kind}</span></td>
+        <td><div class="url-cell" title="${esc(w.url)}">${esc(w.url)}</div>${w.label ? `<div class="small muted">${esc(w.label)}</div>` : ''}</td>
         <td><span class="badge ${w.status}">${w.status}</span></td>
         <td><span class="badge ${w.crawl_status}">${w.crawl_status}</span>${w.crawl_error ? `<div class="small" style="color:var(--danger)">${esc(w.crawl_error.slice(0, 80))}</div>` : ''}</td>
-        <td>${w.accessible_page_count}</td>
+        <td class="num">${w.accessible_page_count}</td>
         <td class="muted small">${fmtDate(w.last_scanned_at)}</td>
         <td style="white-space:nowrap; text-align:right;">
           <button class="btn ghost sm" data-toggle="${esc(w.id)}" data-status="${w.status === 'paused' ? 'active' : 'paused'}">${w.status === 'paused' ? 'Resume' : 'Pause'}</button>
@@ -221,16 +227,16 @@ async function scansView() {
     <div><h1>Scans</h1><p>Compare your original site against a comparison site.</p></div>
     <a class="btn" href="#/scans/new">New scan</a>
   </div>
-  ${scans.length === 0 ? emptyState('&#9889;', 'No scans yet', 'Start your first scan from two registered websites.') :
+  ${scans.length === 0 ? emptyState('bolt', 'No scans yet', 'Start your first scan from two registered websites.') :
   `<div class="card" style="padding:0; overflow-x:auto;">
     <table>
       <thead><tr><th>Original</th><th>Comparison</th><th>Status</th><th>Compared</th><th>Findings</th><th>Started</th><th>Finished</th><th>Error</th><th></th></tr></thead>
       <tbody>
       ${scans.map((s) => `<tr>
-        <td class="url-cell mono">${esc(s.original_url)}</td>
-        <td class="url-cell mono">${esc(s.comparison_url)}</td>
+        <td class="url-cell" title="${esc(s.original_url)}">${esc(s.original_url)}</td>
+        <td class="url-cell" title="${esc(s.comparison_url)}">${esc(s.comparison_url)}</td>
         <td><span class="badge ${s.status}">${s.status}</span></td>
-        <td>${s.pages_compared ?? '-'}</td><td>${s.findings ?? '-'}</td>
+        <td class="num">${s.pages_compared ?? '-'}</td><td class="num">${s.findings ?? '-'}</td>
         <td class="muted small">${fmtDate(s.created_at)}</td>
         <td class="muted small">${fmtDate(s.finished_at)}</td>
         <td class="small" style="color:var(--danger); max-width:200px;">${s.error ? esc(s.error.slice(0, 120)) : ''}</td>
@@ -251,13 +257,13 @@ async function newScanView() {
     return `
     <div class="page-head"><div><h1>New scan</h1><p>You need one active original site and one active comparison site.</p></div>
     <a class="btn secondary" href="#/scans">Back to scans</a></div>
-    ${emptyState('&#128218;', 'Not ready yet', originals.length === 0 ? 'Add your original website first.' : 'Add a comparison website first.')}
+    ${emptyState('book', 'Not ready yet', originals.length === 0 ? 'Add your original website first.' : 'Add a comparison website first.')}
     <a class="btn" href="#/websites">Go to Websites</a>`;
   }
   return `
   <div class="page-head"><div><h1>New scan</h1><p>Pages of both sites will be fetched if needed, then compared page by page.</p></div>
   <a class="btn secondary" href="#/scans">Back to scans</a></div>
-  <div class="card" style="max-width:560px;">
+  <div class="card" style="max-width:580px;">
     <form id="scanForm" novalidate>
       <div class="field"><label for="origSel">Original website</label>
         <select id="origSel">${originals.map((w) => `<option value="${esc(w.id)}">${esc(w.url)}</option>`).join('')}</select></div>
@@ -267,13 +273,13 @@ async function newScanView() {
         <div class="field"><label for="maxPages">Max pages per site</label><input id="maxPages" type="number" min="1" max="25" value="10"><div class="hint">Crawl limit: 25.</div></div>
         <div class="field"><label for="maxDepth">Crawl depth</label><input id="maxDepth" type="number" min="0" max="2" value="1"><div class="hint">0 = seed page only. Max: 2.</div></div>
       </div>
-      <div class="field"><label for="recrawl" style="display:flex; gap:8px; align-items:center; color:var(--text);"><input id="recrawl" type="checkbox" style="width:auto;"> Re-fetch pages now (otherwise cached content is used)</label></div>
+      <div class="field"><label for="recrawl" style="display:flex; gap:9px; align-items:center;"><input id="recrawl" type="checkbox" style="width:auto;"> Re-fetch pages now (otherwise cached content is used)</label></div>
       <div class="form-error" id="scanError" role="alert"></div>
       <button class="btn" type="submit" id="scanSubmit">Start scan</button>
       <span class="small muted" style="margin-left:10px;">Duplicate scans for the same pair are blocked while one is running.</span>
     </form>
     <div id="scanProgress" style="display:none; margin-top:18px;">
-      <div class="loading"><div class="spinner"></div><span id="scanStatusText">Scan running... fetching pages and comparing content.</span></div>
+      <div class="loading" style="padding:10px 0;"><div class="spinner"></div><span id="scanStatusText">Scan running... fetching pages and comparing content.</span></div>
     </div>
   </div>`;
 }
@@ -289,8 +295,8 @@ async function resultsView() {
   <div class="page-head">
     <div><h1>Potential matches</h1><p>Similarity scores measure text overlap - not infringement. Review each finding yourself.</p></div>
     <div style="display:flex; gap:10px;">
-      <a class="btn secondary" href="/api/workspaces/${esc(wsId)}/reports/export" target="_blank">Export report (JSON)</a>
-      <a class="btn secondary" href="/api/workspaces/${esc(wsId)}/reports/export.pdf" target="_blank">Export report (PDF)</a>
+      <a class="btn secondary" href="/api/workspaces/${esc(wsId)}/reports/export" target="_blank">Export JSON</a>
+      <a class="btn secondary" href="/api/workspaces/${esc(wsId)}/reports/export.pdf" target="_blank">Export PDF</a>
     </div>
   </div>
   <div class="card" style="padding:16px;">
@@ -304,17 +310,17 @@ async function resultsView() {
       <button class="btn ghost" id="clearFilters">Clear</button>
     </div>
   </div>
-  ${results.length === 0 ? emptyState('&#128269;', 'No matching findings', 'Try adjusting the filters, or run a new scan.') :
+  ${results.length === 0 ? emptyState('search', 'No matching findings', 'Try adjusting the filters, or run a new scan.') :
   `<div class="card" style="padding:0; margin-top:16px; overflow-x:auto;">
     <table>
       <thead><tr><th>Original page</th><th>Comparison page</th><th>Type</th><th>Jaccard</th><th>Cosine</th><th>Status</th><th>Last seen</th></tr></thead>
       <tbody>
       ${results.map((r) => `<tr class="clickable" data-result="${esc(r.id)}">
-        <td class="url-cell mono" title="${esc(r.original_url)}">${esc(r.original_url)}</td>
-        <td class="url-cell mono" title="${esc(r.comparison_url)}">${esc(r.comparison_url)}</td>
+        <td class="url-cell" title="${esc(r.original_url)}">${esc(r.original_url)}</td>
+        <td class="url-cell" title="${esc(r.comparison_url)}">${esc(r.comparison_url)}</td>
         <td><span class="badge ${r.match_type}">${r.match_type.replace('_', ' ')}</span></td>
-        <td><div style="display:flex; align-items:center; gap:8px;"><div class="score-bar"><div style="width:${Math.min(r.jaccard_score * 100, 100)}%"></div></div>${fmtScore(r.jaccard_score)}</div></td>
-        <td>${fmtScore(r.cosine_score)}</td>
+        <td><span class="score-pill"><span class="dot" style="background:var(--accent)"></span>${fmtScore(r.jaccard_score)}</span></td>
+        <td><span class="score-pill"><span class="dot" style="background:#a5b4fc"></span>${fmtScore(r.cosine_score)}</span></td>
         <td><span class="badge ${r.status}">${r.status.replace('_', ' ')}</span></td>
         <td class="muted small">${fmtDate(r.last_observed_at)}</td>
       </tr>`).join('')}
@@ -335,7 +341,19 @@ async function resultDetailView(id) {
       <a class="btn ghost" href="#/results">&larr; Back</a>
     </div>
   </div>
-  <div class="grid cols-2">
+  <div class="grid cols-4">
+    <div class="stat"><div class="lbl">Match type</div><div class="num" style="font-size:16px;">${result.match_type.replace('_', ' ')}</div></div>
+    <div class="stat"><div class="lbl">Jaccard (shingles)</div><div class="num">${fmtScore(result.jaccard_score)}</div></div>
+    <div class="stat"><div class="lbl">TF-IDF cosine</div><div class="num">${fmtScore(result.cosine_score)}</div></div>
+    <div class="stat"><div class="lbl">Review status</div>
+      <div style="margin-top:6px;">
+        <select id="reviewSelect" data-id="${esc(result.id)}" style="font-size:13px;">
+          ${['new', 'in_review', 'confirmed', 'dismissed'].map((s) => `<option value="${s}" ${result.status === s ? 'selected' : ''}>${s.replace('_', ' ')}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+  </div>
+  <div class="grid cols-2" style="margin-top:16px;">
     <div class="card">
       <h3>Original page</h3>
       <a class="mono small" href="${esc(result.original_url)}" target="_blank" rel="noopener noreferrer">${esc(result.original_url)}</a>
@@ -345,50 +363,38 @@ async function resultDetailView(id) {
       <a class="mono small" href="${esc(result.comparison_url)}" target="_blank" rel="noopener noreferrer">${esc(result.comparison_url)}</a>
     </div>
   </div>
-  <div class="grid cols-4" style="margin-top:16px;">
-    <div class="stat"><div class="lbl">MATCH TYPE</div><div class="num" style="font-size:1.1rem;">${result.match_type.replace('_', ' ')}</div></div>
-    <div class="stat"><div class="lbl">JACCARD (SHINGLES)</div><div class="num">${fmtScore(result.jaccard_score)}</div></div>
-    <div class="stat"><div class="lbl">TF-IDF COSINE</div><div class="num">${fmtScore(result.cosine_score)}</div></div>
-    <div class="stat"><div class="lbl">REVIEW STATUS</div>
-      <div style="margin-top:8px;">
-        <select id="reviewSelect" data-id="${esc(result.id)}" style="padding:6px 10px; font-size:13px;">
-          ${['new', 'in_review', 'confirmed', 'dismissed'].map((s) => `<option value="${s}" ${result.status === s ? 'selected' : ''}>${s.replace('_', ' ')}</option>`).join('')}
-        </select>
-      </div>
-    </div>
-  </div>
   <div class="card" style="margin-top:16px;">
     <h3>Evidence record</h3>
     ${!ev ? `<p class="muted">No evidence record stored for this finding.</p>` : `
     <div class="grid cols-2">
-      <div>
-        <div class="small muted">Captured (UTC)</div><div>${fmtDate(ev.captured_at)}</div>
-        <div class="small muted" style="margin-top:10px;">Capture status</div><span class="badge ${ev.capture_status}">${ev.capture_status}</span>
-        <div class="small muted" style="margin-top:10px;">Content hash (original page)</div><div class="mono small">${esc(ev.original_hash)}</div>
-        <div class="small muted" style="margin-top:10px;">Content hash (comparison page)</div><div class="mono small">${esc(ev.comparison_hash)}</div>
-        <div class="small muted" style="margin-top:10px;">Screenshot</div>
-        <div>${ev.screenshot_ref ? `<a href="${esc(ev.screenshot_ref)}" target="_blank">View</a>` : '<span class="muted small">Not captured - this build has no browser screenshot engine. Excerpt and hash below are the stored evidence.</span>'}</div>
-      </div>
-      <div>
-        <div class="small muted">First observed</div><div>${fmtDate(result.first_observed_at)}</div>
-        <div class="small muted" style="margin-top:10px;">Last observed</div><div>${fmtDate(result.last_observed_at)}</div>
-        <div class="small muted" style="margin-top:10px;">Review history</div>
+      <dl class="defgrid">
+        <dt>Captured (UTC)</dt><dd>${fmtDate(ev.captured_at)}</dd>
+        <dt>Capture status</dt><dd><span class="badge ${ev.capture_status}">${ev.capture_status}</span></dd>
+        <dt>Hash (original)</dt><dd class="mono small">${esc(ev.original_hash)}</dd>
+        <dt>Hash (comparison)</dt><dd class="mono small">${esc(ev.comparison_hash)}</dd>
+        <dt>Screenshot</dt><dd>${ev.screenshot_ref ? `<a href="${esc(ev.screenshot_ref)}" target="_blank">View</a>` : '<span class="muted small">Not captured - this build has no browser screenshot engine. Excerpt and hashes are the stored evidence.</span>'}</dd>
+      </dl>
+      <dl class="defgrid">
+        <dt>First observed</dt><dd>${fmtDate(result.first_observed_at)}</dd>
+        <dt>Last observed</dt><dd>${fmtDate(result.last_observed_at)}</dd>
+        <dt>Review history</dt><dd>
         ${result.review_history.length === 0 ? '<span class="muted small">No changes yet.</span>' :
           result.review_history.map((h) => `<div class="small">${fmtDate(h.created_at)}: ${esc(h.from_status || 'new')} &rarr; <strong>${esc(h.to_status)}</strong>${h.note ? ' - ' + esc(h.note) : ''}${h.user_email ? ` <span class="muted">by ${esc(h.user_email)}</span>` : ''}</div>`).join('')}
-      </div>
+        </dd>
+      </dl>
     </div>`}
   </div>
-  <h2 style="margin-top:24px;">Shared passages</h2>
-  ${result.passages.length === 0 ? emptyState('&#128196;', 'No passages', 'This finding was recorded on score thresholds alone.') :
+  <h2 style="margin-top:24px; font-size:17px;">Shared passages</h2>
+  ${result.passages.length === 0 ? emptyState('doc', 'No passages', 'This finding was recorded on score thresholds alone.') :
   result.passages.map((p, i) => `
-  <div class="card" style="margin-bottom:16px;">
-    <h3>Passage ${i + 1} <span class="badge">${p.word_count} words</span></h3>
+  <div class="card" style="margin-top:14px;">
+    <div class="passage-head"><h3 style="margin:0;">Passage ${i + 1}</h3><span class="badge">${p.word_count} words</span></div>
     <div class="grid cols-2">
-      <div><div class="small muted" style="margin-bottom:6px;">Original text</div><div class="excerpt">${esc(p.original_text)}</div></div>
-      <div><div class="small muted" style="margin-bottom:6px;">Comparison text</div><div class="excerpt">${esc(p.comparison_text)}</div></div>
+      <div><div class="small muted" style="margin-bottom:7px;">Original text</div><div class="excerpt">${esc(p.original_text)}</div></div>
+      <div><div class="small muted" style="margin-bottom:7px;">Comparison text</div><div class="excerpt">${esc(p.comparison_text)}</div></div>
     </div>
   </div>`).join('')}
-  <p class="muted small">This record shows what the system observed on public pages at capture time. It does not independently prove ownership, intent, or infringement.</p>`;
+  <p class="muted small" style="margin-top:18px;">This record shows what the system observed on public pages at capture time. It does not independently prove ownership, intent, or infringement.</p>`;
 }
 
 async function settingsView() {
@@ -411,7 +417,7 @@ async function settingsView() {
       ${s.members.map((m) => `<tr><td>${esc(m.email)}</td><td><span class="badge ${m.role === 'owner' ? 'confirmed' : ''}">${m.role}</span></td><td class="muted small">${fmtDate(m.created_at)}</td></tr>`).join('')}
       </tbody></table>
       ${s.workspace.role !== 'member' ? `
-      <form id="memberForm" novalidate style="margin-top:14px;">
+      <form id="memberForm" novalidate style="margin-top:16px;">
         <div class="grid cols-2">
           <div class="field"><label for="memberEmail">Email (existing account)</label><input id="memberEmail" type="email" placeholder="teammate@example.com"></div>
           <div class="field"><label for="memberRole">Role</label><select id="memberRole"><option value="member">member</option><option value="admin">admin</option></select></div>
@@ -423,7 +429,7 @@ async function settingsView() {
   </div>
   <div class="card" style="margin-top:16px;">
     <h3>Notification preferences</h3>
-    <label style="display:flex; gap:8px; align-items:center; color:var(--text);"><input type="checkbox" id="notifFindings" style="width:auto;"> Email me when new potential matches are found</label>
+    <label style="display:flex; gap:9px; align-items:center;"><input type="checkbox" id="notifFindings" style="width:auto;"> Email me when new potential matches are found</label>
     <p class="muted small" style="margin-top:10px;">${esc(s.note)}</p>
   </div>
   <div class="card" style="margin-top:16px;">
@@ -453,7 +459,7 @@ async function handleAuthForm(e, mode) {
     const body = mode === 'signup'
       ? { email, password, workspace_name: elid('wsname') ? elid('wsname').value.trim() : undefined }
       : { email, password };
-    const res = await api(`/auth/${mode === 'signup' ? 'signup' : 'signin'}`, { method: 'POST', body });
+    await api(`/auth/${mode === 'signup' ? 'signup' : 'signin'}`, { method: 'POST', body });
     await loadMe();
     location.hash = '#/dashboard';
     toast(mode === 'signup' ? 'Account created. Welcome!' : 'Signed in.', 'success');

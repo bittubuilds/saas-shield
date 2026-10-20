@@ -6,85 +6,130 @@
 <title>SaaS Shield - Detect potential copying of your website content</title>
 <meta name="description" content="SaaS Shield helps startup founders find potential copying of their public website content, compare pages, and collect evidence of similarities.">
 <link rel="stylesheet" href="/styles.css">
-<meta name="theme-color" content="#0B0D12">
+<meta name="theme-color" content="#0b0e14">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%238B5CF6'/><path d='M16 6l8 3v7c0 5-3.5 8-8 10-4.5-2-8-5-8-10V9l8-3z' fill='white'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%234f46e5'/><path d='M16 6l8 3v7c0 5-3.5 8-8 10-4.5-2-8-5-8-10V9l8-3z' fill='white'/></svg>">
 </head>
 <body>
 <div class="landing">
+
   <nav class="nav">
-    <a class="logo" href="/"><span class="logo-mark">&#128737;</span> SaaS Shield</a>
-    <div style="display:flex; gap:10px;">
-      <a class="btn secondary" href="#how-it-works">How It Works</a>
+    <a class="logo" href="/">
+      <span class="logo-mark"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 3v6c0 5-3.5 8.5-8 11-4.5-2.5-8-6-8-11V5l8-3z"/></svg></span>
+      SaaS Shield
+    </a>
+    <div class="links">
+      <a class="plain" href="#how-it-works">How it works</a>
+      <a class="plain" href="#evidence">Evidence</a>
       <a class="btn" href="/app">Get Started</a>
     </div>
   </nav>
 
   <section class="hero">
-    <h1>Find out when someone copies your website content</h1>
-    <p class="sub">SaaS Shield extracts your public pages, compares them against competitor pages you register, and shows you the matching passages - with evidence you can review and export.</p>
-    <div class="cta-row">
-      <a class="btn" href="/app">Get Started - it's free</a>
-      <a class="btn secondary" href="#how-it-works">Explore How It Works</a>
+    <div>
+      <div class="kicker">For startup founders</div>
+      <h1>Find out when someone <em>copies your website</em></h1>
+      <p class="sub">SaaS Shield fetches your public pages, compares them against the competitor sites you register, and shows you the matching passages - with evidence you can review and export.</p>
+      <div class="cta-row">
+        <a class="btn" href="/app">Get Started - it's free</a>
+        <a class="btn secondary" href="#how-it-works">Explore How It Works</a>
+      </div>
+      <div class="hero-meta">
+        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Compares only sites you register</div>
+        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Reproducible, content-derived scores</div>
+        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Exportable evidence reports</div>
+      </div>
     </div>
-  </section>
 
-  <section class="preview-shot" aria-label="Product preview">
-    <div style="padding:22px 22px 12px; display:flex; gap:8px; align-items:center; border-bottom:1px solid var(--border);">
-      <span style="width:10px;height:10px;border-radius:50%;background:#F87171"></span>
-      <span style="width:10px;height:10px;border-radius:50%;background:#FBBF24"></span>
-      <span style="width:10px;height:10px;border-radius:50%;background:#34D399"></span>
-      <span class="small muted" style="margin-left:10px;">saas-shield / results</span>
-    </div>
-    <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:14px; padding:20px;">
-      <div class="stat"><div class="lbl">WEBSITES MONITORED</div><div class="num">3</div></div>
-      <div class="stat"><div class="lbl">SCANS COMPLETED</div><div class="num">12</div></div>
-      <div class="stat"><div class="lbl">POTENTIAL MATCHES</div><div class="num">2</div></div>
-    </div>
-    <div style="padding:0 20px 20px;">
-      <div class="card" style="padding:14px 18px;">
-        <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-          <div><strong>Original:</strong> <span class="muted">yourpage.com/pricing</span></div>
-          <span class="badge long_passage">long passage</span>
+    <div class="preview-shot" role="img" aria-label="Preview of the SaaS Shield findings screen">
+      <div class="chrome"><i></i><i></i><i></i><span>saas-shield / findings</span></div>
+      <div class="body">
+        <div class="preview-stats">
+          <div class="stat"><div class="lbl">Websites</div><div class="num">3</div></div>
+          <div class="stat"><div class="lbl">Scans</div><div class="num">12</div></div>
+          <div class="stat"><div class="lbl">Potential matches</div><div class="num">2</div></div>
         </div>
-        <div class="muted small" style="margin:6px 0 10px;">Comparison: copycat-example.net/pricing &middot; 64-word shared passage</div>
-        <div class="excerpt">"Our platform helps teams <mark>automate their entire workflow with real-time analytics and enterprise-grade security, trusted by more than 2,000 companies across 40 countries</mark>..."</div>
+        <div class="preview-finding">
+          <div class="row">
+            <div class="urls">yourpage.com/pricing &nbsp;&rarr;&nbsp; copycat-example.net/pricing</div>
+            <span class="badge long_passage">long passage</span>
+          </div>
+          <div class="excerpt">"Our platform helps teams <mark>automate their entire workflow with real-time analytics and enterprise-grade security, trusted by more than 2,000 companies across 40 countries</mark>..."</div>
+        </div>
       </div>
     </div>
   </section>
 
-  <section class="features">
-    <div class="feature card">
-      <h3>Content monitoring</h3>
-      <p>Register your original website and comparison sites. SaaS Shield extracts the public pages of each - titles, text, and metadata - with conservative, robots.txt-respecting crawling.</p>
-    </div>
-    <div class="feature card">
-      <h3>Similarity detection</h3>
-      <p>A deterministic engine compares your pages with comparison pages using shingle overlap, TF-IDF cosine similarity, and matching-passage extraction. Every score is reproducible and derived from real content.</p>
-    </div>
-    <div class="feature card">
-      <h3>Evidence collection</h3>
-      <p>Each potential match stores both URLs, retrieval timestamps, content hashes, and the matched excerpts. Review it, dismiss it, or export a JSON or PDF report of what was observed.</p>
+  <section id="how-it-works" class="workflow">
+    <div class="kicker">How it works</div>
+    <div class="steps">
+      <div>
+        <div class="step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></div>
+        <div class="n">STEP 1</div><h3>Register your site</h3>
+        <p>Add your original website. SaaS Shield extracts its public pages conservatively and respects robots.txt.</p>
+      </div>
+      <div>
+        <div class="step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+        <div class="n">STEP 2</div><h3>Add comparisons</h3>
+        <p>Register the competitor or comparison websites you want to check your content against.</p>
+      </div>
+      <div>
+        <div class="step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg></div>
+        <div class="n">STEP 3</div><h3>Run a scan</h3>
+        <p>The engine compares every eligible page pair using shingle overlap and TF-IDF cosine similarity.</p>
+      </div>
+      <div>
+        <div class="step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
+        <div class="n">STEP 4</div><h3>Review matches</h3>
+        <p>See shared passages, scores, and source URLs. Mark findings for review, confirm, or dismiss them.</p>
+      </div>
+      <div>
+        <div class="step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-6M9 15h6"/></svg></div>
+        <div class="n">STEP 5</div><h3>Export evidence</h3>
+        <p>Download a report with matched excerpts, retrieval timestamps, content hashes, and methodology.</p>
+      </div>
     </div>
   </section>
 
-  <section id="how-it-works" class="how-steps">
-    <div><div class="step-num">STEP 1</div><h3>Add your website</h3><p class="muted">Register your original site and one or more comparison sites in your workspace.</p></div>
-    <div><div class="step-num">STEP 2</div><h3>Run a scan</h3><p class="muted">SaaS Shield fetches the public pages and compares every eligible page pair.</p></div>
-    <div><div class="step-num">STEP 3</div><h3>Review matches</h3><p class="muted">See shared passages, similarity scores, and source URLs. Mark findings for review, confirm, or dismiss.</p></div>
-    <div><div class="step-num">STEP 4</div><h3>Export evidence</h3><p class="muted">Download a report with matched excerpts, methodology, and limitations.</p></div>
+  <section id="evidence" class="workflow" style="border-top:none; padding-top:10px;">
+    <div class="kicker">Evidence, side by side</div>
+    <div class="evidence-showcase">
+      <div class="evidence-pane">
+        <div class="pane-head"><span class="kicker">Original</span><span class="url">yourpage.com/pricing</span></div>
+        <div class="excerpt">Build in minutes with pre-configured templates. Scale to millions of requests with automatic sharding, zero-downtime deploys, and usage-based pricing that grows with your team.</div>
+      </div>
+      <div class="evidence-pane">
+        <div class="pane-head"><span class="kicker">Comparison</span><span class="url">copycat-example.net/pricing</span></div>
+        <div class="excerpt">Build in minutes with pre-configured templates. <mark>Scale to millions of requests with automatic sharding, zero-downtime deploys, and usage-based pricing that grows with your team.</mark></div>
+      </div>
+    </div>
   </section>
 
   <section class="disclaimer">
-    <strong>Honest disclosure:</strong> SaaS Shield detects <em>potential</em> copying of public web content and records what it observed. Similar text is not proof of theft or legal infringement - generic phrases and industry boilerplate overlap naturally. SaaS Shield does not provide legal protection, and this tool is not legal advice.
+    <strong>Honest disclosure:</strong> SaaS Shield detects <em>potential</em> copying of public web content and records what it observed. Similar text is not proof of theft or legal infringement - generic phrases and industry boilerplate overlap naturally. SaaS Shield does not continuously monitor the entire internet, and this tool is not legal advice.
   </section>
 
   <footer class="footer">
-    <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:12px;">
-      <span>&copy; 2026 SaaS Shield (MVP). Built for research and evidence-gathering.</span>
-      <span><a href="/app">Open the app</a></span>
+    <div>
+      <a class="logo" href="/" style="padding:0 0 10px;">
+        <span class="logo-mark"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 3v6c0 5-3.5 8.5-8 11-4.5-2.5-8-6-8-11V5l8-3z"/></svg></span>
+        SaaS Shield
+      </a>
+      <div>&copy; 2026 SaaS Shield (MVP). Built for research and evidence-gathering.</div>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <div>Product</div>
+        <a href="/app">Open the app</a>
+        <a href="#how-it-works">How it works</a>
+      </div>
+      <div class="col">
+        <div>Resources</div>
+        <a href="https://github.com/bittubuilds/saas-shield">Source code</a>
+        <a href="https://github.com/bittubuilds/saas-shield#readme">Documentation</a>
+      </div>
     </div>
   </footer>
 </div>
