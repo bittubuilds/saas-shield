@@ -63,7 +63,8 @@ async function showError(e) { toast(e.message, 'error'); }
 // ---------------------------------------------------------------------------
 // shell
 // ---------------------------------------------------------------------------
-const LOGO_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 3v6c0 5-3.5 8.5-8 11-4.5-2.5-8-6-8-11V5l8-3z"/></svg>';
+const LOGO_SVG = '<svg width="24" height="24" viewBox="0 0 24 24"><defs><linearGradient id="sslg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8fa3ef"/><stop offset="1" stop-color="#2c3e50"/></linearGradient></defs><path d="M12 1.6l8.6 3.2v6.1c0 5.4-3.6 9.2-8.6 11.5C7 20.1 3.4 16.3 3.4 10.9V4.8z" fill="url(#sslg)"/><text x="12" y="16.6" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="800" fill="#ffffff">S</text></svg>';
+const LOGO_LOCKUP = '<span class="logo-mark"><svg width="22" height="22" viewBox="0 0 24 24"><defs><linearGradient id="sslg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8fa3ef"/><stop offset="1" stop-color="#2c3e50"/></linearGradient></defs><path d="M12 1.6l8.6 3.2v6.1c0 5.4-3.6 9.2-8.6 11.5C7 20.1 3.4 16.3 3.4 10.9V4.8z" fill="url(#sslg)"/><text x="12" y="16.6" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="800" fill="#ffffff">S</text></svg></span><span class="wordmark"><span class="name"><b>SaaS</b> Shield</span><span class="tagline">Protect Your Website Content</span></span>';
 
 const ICONS = {
   dash: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
@@ -92,7 +93,7 @@ function shell(content, activeRoute) {
   return `
   <div class="shell">
     <aside class="sidebar">
-      <a class="logo" href="#/dashboard"><span class="logo-mark">${LOGO_SVG}</span> SaaS Shield</a>
+      <a class="logo" href="#/dashboard">${LOGO_LOCKUP}</a>
       <div class="ws-chip">${esc(ws ? ws.name : '')}</div>
       ${links}
       <div class="spacer"></div>
@@ -115,7 +116,7 @@ function authView(mode = 'signin') {
   return `
   <div class="auth-wrap">
     <div class="auth-card">
-      <div class="auth-brand"><a class="logo" href="/"><span class="logo-mark">${LOGO_SVG}</span> SaaS Shield</a></div>
+      <div class="auth-brand"><a class="logo" href="/">${LOGO_LOCKUP}</a></div>
       <div class="card">
         <h2>${isSignup ? 'Create your account' : 'Welcome back'}</h2>
         <p class="subhead">${isSignup ? 'A workspace is created automatically.' : 'Sign in to your workspace.'}</p>

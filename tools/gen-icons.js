@@ -1,6 +1,6 @@
 'use strict';
 // Dependency-free PNG icon generator for the PWA (zlib + CRC32 only).
-// Dark cybersecurity bg (#0B0D12), purple shield (#8B5CF6), cyan accent (#00C2FF).
+// Brand: gradient shield (#8fa3ef -> #2c3e50) with a white S on dark navy.
 const zlib = require('zlib');
 const fs = require('fs');
 const path = require('path');
@@ -14,6 +14,7 @@ function crc32(buf) {
       for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
       table[n] = c >>> 0;
     }
+    crc32.table = table;
   }
   let c = 0xffffffff;
   for (const b of buf) c = table[(c ^ b) & 0xff] ^ (c >>> 8);
@@ -46,20 +47,21 @@ function png(width, height, rgba) {
   ]);
 }
 
-const BG = [11, 13, 18, 255];       // #0B0D12
-const SURFACE = [19, 31, 43, 255];  // #131720
-const SHIELD = [139, 92, 246, 255]; // #8B5CF6
-const CYAN = [0, 194, 255, 255];    // #00C2FF
-const WHITE = [244, 245, 247, 255]; // #F4F5F7
+const BG = [11, 14, 20, 255];        // #0b0e14 app background
+const SHIELD_TOP = [143, 163, 239];   // #8fa3ef
+const SHIELD_BOT = [44, 62, 80];     // #2c3e50
+const WHITE = [255, 255, 255, 255];
+
+const lerp = (a, b, t) => Math.round(a + (b - a) * t);
 
 function drawIcon(size) {
   const px = Buffer.alloc(size * size * 4);
   const put = (x, y, c) => {
+    if (x < 0 || y < 0 || x >= size || y >= size) return;
     const i = (y * size + x) * 4;
-    px[i] = c[0]; px[i + 1] = c[1]; px[i + 2] = c[2]; px[i + 3] = c[3];
+    px[i] = c[0]; px[i + 1] = c[1]; px[i + 2] = c[2]; px[i + 3] = 255;
   };
-  const bg = SURFACE;
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) put(x, y, bg);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) put(x, y, BG);
 
   const cx = size / 2, S = size;
   const top = 0.24 * S, mid = 0.60 * S, bot = 0.80 * S;
@@ -73,12 +75,24 @@ function drawIcon(size) {
       else hw = halfW * (1 - (y - mid) / (bot - mid));
       const ax = Math.abs(dx);
       if (ax <= hw) {
-        const edge = ax > hw - Math.max(1, size * 0.018);
-        const band = y > top + size * 0.10 && y < top + size * 0.175 && ax <= hw - size * 0.10;
-        put(x, y, edge ? WHITE : band ? CYAN : SHIELD);
+        const t = (y - top) / (bot - top);
+        put(x, y, [lerp(SHIELD_TOP[0], SHIELD_BOT[0], t), lerp(SHIELD_TOP[1], SHIELD_BOT[1], t), lerp(SHIELD_TOP[2], SHIELD_BOT[2], t)]);
       }
     }
   }
+
+  // blocky white S centered in the shield
+  const x1 = 0.37 * S, x2 = 0.63 * S, t = 0.05 * S;
+  const bars = [0.40 * S, 0.50 * S, 0.60 * S];
+  const rect = (rx, ry, rw, rh) => {
+    for (let y = Math.round(ry); y < Math.round(ry + rh); y++)
+      for (let x = Math.round(rx); x < Math.round(rx + rw); x++) put(x, y, WHITE);
+  };
+  rect(x1, bars[0], x2 - x1, t);            // top bar
+  rect(x1, bars[0], t, bars[2] + t - bars[0]); // left vertical
+  rect(x1, bars[1], x2 - x1, t);            // middle bar
+  rect(x2 - t, bars[1], t, bars[2] + t - bars[1]); // right vertical
+  rect(x1, bars[2], x2 - x1, t);            // bottom bar
   return png(size, size, px);
 }
 
