@@ -2,7 +2,7 @@
 /* SaaS Shield service worker: offline shell for static assets only.
    API calls (/api/*) are NEVER cached - scan data must always be live. */
 
-const CACHE = 'saas-shield-v2';
+const CACHE = 'saas-shield-v3';
 const SHELL = [
   '/',
   '/app',
@@ -10,7 +10,10 @@ const SHELL = [
   '/app.js',
   '/manifest.webmanifest',
   '/icon-192.png',
-  '/icon-512.png'
+  '/icon-512.png',
+  '/brand/logo-full.png',
+  '/brand/logo-mark.png',
+  '/favicon.ico'
 ];
 
 self.addEventListener('install', (e) => {
