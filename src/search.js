@@ -75,4 +75,4 @@ async function searchWeb(query, { num = 10 } = {}) {
   return urls;
 }
 
-module.exports = { searchWeb, SearchUnavailableError };
+module.exports = { searchWeb, isSearchConfigured: () => Boolean(getSerperKey()), SearchUnavailableError };

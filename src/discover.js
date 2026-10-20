@@ -12,7 +12,8 @@ const db = require('./db');
 const config = require('./config');
 const sim = require('./similarity');
 const scanner = require('./scanner');
-const { searchWeb, SearchUnavailableError } = require('./search');
+const search = require('./search');
+const { searchWeb, SearchUnavailableError } = search;
 const { newId, utcNow } = require('./util');
 const { audit } = require('./auth');
 const { parseHttpUrl, domainOf } = require('./ssrf');
@@ -210,7 +211,7 @@ async function runDiscovery(discoveryId, opts = {}) {
 
     db.prepare(`UPDATE discoveries SET status='completed', provider=?, queries=?, found_hosts=?, created_scan_count=?, finished_at=?, updated_at=? WHERE id=?`)
       .run(
-        process.env.SERPER_API_KEY ? 'serper' : (opts.searchFn ? 'test' : 'none'),
+        search.isSearchConfigured() ? 'serper' : (opts.searchFn ? 'test' : 'none'),
         JSON.stringify(queriesUsed),
         JSON.stringify(registered),
         createdScans,

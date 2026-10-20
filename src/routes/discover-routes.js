@@ -1,5 +1,6 @@
 'use strict';
 const express = require('express');
+const search = require('../search');
 const db = require('../db');
 const discover = require('../discover');
 const { requireAuth, requireWorkspace, audit, rateLimit } = require('../auth');
@@ -23,7 +24,7 @@ function serializeDiscovery(d) {
     error: d.error,
     created_at: d.created_at,
     finished_at: d.finished_at,
-    search_available: Boolean(process.env.SERPER_API_KEY)
+    search_available: search.isSearchConfigured()
   };
 }
 
@@ -53,7 +54,7 @@ router.post('/workspaces/:workspaceId/discover', requireWorkspace(), createLimit
 // List recent discovery runs
 router.get('/workspaces/:workspaceId/discoveries', requireWorkspace(), (req, res) => {
   const rows = db.prepare(`SELECT * FROM discoveries WHERE workspace_id=? ORDER BY created_at DESC LIMIT 20`).all(req.workspace.id);
-  res.json({ discoveries: rows.map(serializeDiscovery), search_available: Boolean(process.env.SERPER_API_KEY) });
+  res.json({ discoveries: rows.map(serializeDiscovery), search_available: search.isSearchConfigured() });
 });
 
 // Poll one run
