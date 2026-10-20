@@ -10,6 +10,7 @@ const scanRoutes = require('./routes/scan-routes');
 const resultRoutes = require('./routes/result-routes');
 const reportRoutes = require('./routes/report-routes');
 const workspaceRoutes = require('./routes/workspace-routes');
+const discoverRoutes = require('./routes/discover-routes');
 
 const app = express();
 app.disable('x-powered-by');
@@ -27,6 +28,7 @@ app.use('/api', scanRoutes);
 app.use('/api', resultRoutes);
 app.use('/api', reportRoutes);
 app.use('/api', workspaceRoutes);
+app.use('/api', discoverRoutes);
 
 // API 404 + error handling
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));

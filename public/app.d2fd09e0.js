@@ -251,20 +251,23 @@ async function scansView() {
 }
 
 async function newScanView() {
-  const { websites } = await api(`/workspaces/${wsId}/websites`);
+  const websitesResp = await api(`/workspaces/${wsId}/websites`);
+  const websites = websitesResp.websites || [];
+  try {
+    const d = await api(`/workspaces/${wsId}/discoveries`);
+    websites.__searchAvailable = d.search_available === true;
+  } catch { websites.__searchAvailable = null; }
   const originals = websites.filter((w) => w.kind === 'original' && w.status !== 'paused');
   const comparisons = websites.filter((w) => w.kind === 'comparison' && w.status !== 'paused');
-  if (originals.length === 0 || comparisons.length === 0) {
+  if (originals.length === 0) {
     return `
-    <div class="page-head"><div><h1>New scan</h1><p>You need one active original site and one active comparison site.</p></div>
+    <div class="page-head"><div><h1>New scan</h1><p>You need one active original site to start.</p></div>
     <a class="btn secondary" href="#/scans">Back to scans</a></div>
-    ${emptyState('book', 'Not ready yet', originals.length === 0 ? 'Add your original website first.' : 'Add a comparison website first.')}
+    ${emptyState('book', 'Not ready yet', 'Add your original website first.')}
     <a class="btn" href="#/websites">Go to Websites</a>`;
   }
-  return `
-  <div class="page-head"><div><h1>New scan</h1><p>Pages of both sites will be fetched if needed, then compared page by page.</p></div>
-  <a class="btn secondary" href="#/scans">Back to scans</a></div>
-  <div class="card" style="max-width:580px;">
+  const searchAvailable = websites.__searchAvailable === true;
+  const manualForm = comparisons.length === 0 ? '' : `
     <form id="scanForm" novalidate>
       <div class="field"><label for="origSel">Original website</label>
         <select id="origSel">${originals.map((w) => `<option value="${esc(w.id)}">${esc(w.url)}</option>`).join('')}</select></div>
@@ -281,7 +284,27 @@ async function newScanView() {
     </form>
     <div id="scanProgress" style="display:none; margin-top:18px;">
       <div class="loading" style="padding:10px 0;"><div class="spinner"></div><span id="scanStatusText">Scan running... fetching pages and comparing content.</span></div>
+    </div>`;
+  return `
+  <div class="page-head"><div><h1>New scan</h1><p>Compare manually, or let SaaS Shield find copying sites automatically.</p></div>
+    <a class="btn secondary" href="#/scans">Back to scans</a></div>
+  <div style="display:grid; gap:22px; max-width:580px;">
+  ${manualForm ? `<div class="card">${manualForm}</div>` : ''}
+  <div class="card">
+    <h3 style="margin:0 0 6px;">Auto-discover copies</h3>
+    <p class="small muted" style="margin:0 0 14px;">We pick distinctive sentences from your original site, search the web for them, and scan every site that shows up. No comparison site needed.</p>
+    ${searchAvailable ? '' : '<div class="form-error" style="margin-bottom:10px;">Search API key not configured. Add SERPER_API_KEY in Render &rarr; Environment (free key: serper.dev). Manual scans work without it.</div>'}
+    <form id="discoverForm" novalidate>
+      <div class="field"><label for="discSel">Original website</label>
+        <select id="discSel">${originals.map((w) => `<option value="${esc(w.id)}">${esc(w.url)}</option>`).join('')}</select></div>
+      <div class="form-error" id="discoverError" role="alert"></div>
+      <button class="btn" type="submit" id="discoverSubmit">Find copying sites</button>
+      <span class="small muted" style="margin-left:10px;">Up to 6 sites per run.</span>
+    </form>
+    <div id="discoverProgress" style="display:none; margin-top:18px;">
+      <div class="loading" style="padding:10px 0;"><div class="spinner"></div><span id="discoverStatusText">Searching the web for your content...</span></div>
     </div>
+  </div>
   </div>`;
 }
 
@@ -583,6 +606,40 @@ async function render() {
   bindPage(hash);
 }
 
+async function handleDiscoverForm(e) {
+  e.preventDefault();
+  const errEl = elid('discoverError');
+  errEl.textContent = '';
+  const origId = elid('discSel').value;
+  try {
+    const { discovery } = await api(`/workspaces/${wsId}/discover`, { method: 'POST', body: { original_website_id: origId } });
+    elid('discoverForm').style.display = 'none';
+    elid('discoverProgress').style.display = 'block';
+    elid('discoverSubmit').disabled = true;
+    pollDiscovery(discovery.id);
+  } catch (err) { errEl.textContent = err.message; }
+}
+
+async function pollDiscovery(id) {
+  try {
+    const { discovery } = await api(`/workspaces/${wsId}/discoveries/${id}`);
+    if (discovery.status === 'completed') {
+      elid('discoverStatusText').textContent = `Done. ${discovery.created_scan_count} scan(s) queued.`;
+      toast(`Auto-discovery finished: ${discovery.created_scan_count} scan(s) started.`, 'success');
+      setTimeout(() => { location.hash = '#/scans'; }, 1400);
+      return;
+    }
+    if (discovery.status === 'failed') {
+      elid('discoverProgress').style.display = 'none';
+      elid('discoverForm').style.display = '';
+      elid('discoverSubmit').disabled = false;
+      elid('discoverError').textContent = discovery.error || 'Discovery failed.';
+      return;
+    }
+  } catch { /* transient - keep polling */ }
+  setTimeout(() => pollDiscovery(id), 3000);
+}
+
 function bindShell() {
   const so = elid('signoutBtn');
   if (so) so.addEventListener('click', async () => {
@@ -636,6 +693,8 @@ function bindPage(hash) {
   }));
   const scanForm = elid('scanForm');
   if (scanForm) scanForm.addEventListener('submit', handleScanForm);
+  const discoverForm = elid('discoverForm');
+  if (discoverForm) discoverForm.addEventListener('submit', handleDiscoverForm);
 
   // result rows
   document.querySelectorAll('[data-result]').forEach((tr) => tr.addEventListener('click', () => {

@@ -180,6 +180,30 @@ const MIGRATIONS = [
       );
       CREATE INDEX idx_sessions_user ON sessions(user_id);
     `
+  },
+  {
+    version: 2,
+    name: 'discoveries table for auto-discovery runs',
+    sql: `
+      CREATE TABLE IF NOT EXISTS discoveries (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        original_website_id TEXT NOT NULL REFERENCES websites(id) ON DELETE CASCADE,
+        status TEXT NOT NULL DEFAULT 'queued'
+                CHECK (status IN ('queued','running','completed','failed')),
+        provider TEXT,
+        queries TEXT,
+        found_hosts TEXT,
+        created_scan_count INTEGER,
+        error TEXT,
+        created_by TEXT,
+        created_at TEXT NOT NULL,
+        started_at TEXT,
+        finished_at TEXT,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_discoveries_ws ON discoveries(workspace_id);
+    `
   }
 ];
 

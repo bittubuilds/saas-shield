@@ -52,28 +52,6 @@ async function runScan(scanId) {
     };
     const crawlOpts = { maxPages: params.maxPages, maxDepth: params.maxDepth };
 
-    async function ensureCrawled(site) {
-      db.prepare(`UPDATE websites SET crawl_status='crawling' WHERE id=?`).run(site.id);
-      const onPage = (page) => {
-        if (job.cancelRequested) throw Object.assign(new Error('cancelled'), { code: 'CANCELLED' });
-        db.prepare(`INSERT INTO pages (id, website_id, workspace_id, url, submitted_url, canonical_url, title, text_content, meta_description, content_hash, http_status, fetched_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-                    ON CONFLICT (website_id, url) DO UPDATE SET
-                      text_content=excluded.text_content, content_hash=excluded.content_hash,
-                      title=excluded.title, meta_description=excluded.meta_description,
-                      fetched_at=excluded.fetched_at, http_status=excluded.http_status,
-                      canonical_url=excluded.canonical_url`)
-          .run(page.id, page.website_id, page.workspace_id, page.url, page.submitted_url,
-               page.canonical_url, page.title, page.text_content, page.meta_description,
-               page.content_hash, page.http_status, page.fetched_at);
-      };
-      const summary = await crawlSite(site, onPage, crawlOpts);
-      const liveCount = db.prepare(`SELECT COUNT(DISTINCT content_hash) c FROM pages WHERE website_id=?`).get(site.id).c;
-      db.prepare(`UPDATE websites SET crawl_status='crawled', crawl_error=NULL, accessible_page_count=?, last_scanned_at=?, status=CASE WHEN status IN ('pending','error') THEN 'active' ELSE status END, updated_at=? WHERE id=?`)
-        .run(liveCount, utcNow(), utcNow(), site.id);
-      return summary;
-    }
-
     async function failCrawl(site, err) {
       db.prepare(`UPDATE websites SET crawl_status='failed', crawl_error=?, updated_at=? WHERE id=?`).run(err.message, utcNow(), site.id);
       throw err;
@@ -81,7 +59,7 @@ async function runScan(scanId) {
 
     if (shouldCrawl(original)) {
       try {
-        await ensureCrawled(original);
+        await crawlAndStore(original, crawlOpts, job);
       } catch (e) {
         if (e.code === 'CANCELLED') throw e;
         await failCrawl(original, e);
@@ -91,7 +69,7 @@ async function runScan(scanId) {
 
     if (shouldCrawl(comparison)) {
       try {
-        await ensureCrawled(comparison);
+        await crawlAndStore(comparison, crawlOpts, job);
       } catch (e) {
         if (e.code === 'CANCELLED') throw e;
         await failCrawl(comparison, e);
@@ -203,9 +181,33 @@ function contentUniquePages(websiteId) {
                     ORDER BY fetched_at`).all(websiteId, websiteId);
 }
 
+// Crawl a site and persist its pages. Shared by scans and auto-discovery.
+// `job` = { cancelRequested } for cooperative cancellation.
+async function crawlAndStore(site, opts, job) {
+  db.prepare(`UPDATE websites SET crawl_status='crawling' WHERE id=?`).run(site.id);
+  const onPage = (page) => {
+    if (job && job.cancelRequested) throw Object.assign(new Error('cancelled'), { code: 'CANCELLED' });
+    db.prepare(`INSERT INTO pages (id, website_id, workspace_id, url, submitted_url, canonical_url, title, text_content, meta_description, content_hash, http_status, fetched_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT (website_id, url) DO UPDATE SET
+                  text_content=excluded.text_content, content_hash=excluded.content_hash,
+                  title=excluded.title, meta_description=excluded.meta_description,
+                  fetched_at=excluded.fetched_at, http_status=excluded.http_status,
+                  canonical_url=excluded.canonical_url`)
+      .run(page.id, page.website_id, page.workspace_id, page.url, page.submitted_url,
+           page.canonical_url, page.title, page.text_content, page.meta_description,
+           page.content_hash, page.http_status, page.fetched_at);
+  };
+  const summary = await crawlSite(site, onPage, opts || {});
+  const liveCount = db.prepare(`SELECT COUNT(DISTINCT content_hash) c FROM pages WHERE website_id=?`).get(site.id).c;
+  db.prepare(`UPDATE websites SET crawl_status='crawled', crawl_error=NULL, accessible_page_count=?, last_scanned_at=?, status=CASE WHEN status IN ('pending','error') THEN 'active' ELSE status END, updated_at=? WHERE id=?`)
+    .run(liveCount, utcNow(), utcNow(), site.id);
+  return summary;
+}
+
 function enqueueScan(scanId) {
   running.set(scanId, { cancelRequested: false });
   setImmediate(() => runScan(scanId));
 }
 
-module.exports = { runScan, enqueueScan, requestCancel, isRunning, pairHasActiveScan };
+module.exports = { runScan, enqueueScan, requestCancel, isRunning, pairHasActiveScan, crawlAndStore, contentUniquePages };
