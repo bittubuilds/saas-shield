@@ -17,6 +17,9 @@ app.set('trust proxy', true);   // for correct client IP behind a reverse proxy
 
 app.use(express.json({ limit: '64kb' }));
 
+// Health check for deployment platforms (no auth, no data).
+app.get('/api/health', (req, res) => res.json({ ok: true, uptime: process.uptime() }));
+
 // --- API ---
 app.use('/api/auth', authRoutes);
 app.use('/api', websiteRoutes.router);

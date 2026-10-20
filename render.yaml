@@ -1,0 +1,19 @@
+# Render Blueprint - one-click free deploy for SaaS Shield
+# Sign up at render.com with GitHub, then New -> Blueprint -> select this repo.
+services:
+  - type: web
+    name: saas-shield
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: PUBLIC_BASE_URL
+        sync: false   # set to your Render URL after first deploy (https://saas-shield.onrender.com)
+      - key: SHIELD_ALLOW_PRIVATE_IPS
+        value: "false"
