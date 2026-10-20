@@ -635,18 +635,10 @@ td.num, th.num { text-align: right; font-family: var(--mono); }
 }
 
 /* ============================================================
-   Logo lockup — gradient shield + S icon, two-tone wordmark,
-   tracked tagline (brand spec)
+   Logo — official SaaS Shield lockup (shield + wordmark + tagline)
+   Image is a transparent PNG designed for dark backgrounds.
    ============================================================ */
-.logo .wordmark { display: flex; flex-direction: column; line-height: 1.25; }
-.logo .wordmark .name { font-size: 15px; font-weight: 700; color: #d1d5db; letter-spacing: -0.01em; white-space: nowrap; }
-.logo .wordmark .name b { color: #ffffff; font-weight: 700; }
-.logo .wordmark .tagline {
-  font-size: 8.5px;
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-top: 1px;
-  white-space: nowrap;
-}
+.logo-img { display: block; height: 54px; width: auto; max-width: 100%; }
+.sidebar .logo-img { height: 48px; }
+.auth-brand .logo-img { height: 72px; }
+.footer .logo-img { height: 48px; }
