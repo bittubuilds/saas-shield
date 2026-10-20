@@ -537,7 +537,7 @@ async function updateReview(id, status) {
 // ---------------------------------------------------------------------------
 async function loadMe() {
   try {
-    me = await api('/me');
+    me = await api('/auth/me');
     if (me.workspaces.length === 0) throw new Error('No workspace');
     wsId = me.workspaces[0].id;
     return true;
