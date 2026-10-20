@@ -2,7 +2,7 @@
 /* SaaS Shield service worker: offline shell for static assets only.
    API calls (/api/*) are NEVER cached - scan data must always be live. */
 
-const CACHE = 'saas-shield-v4';
+const CACHE = 'saas-shield-v5';
 const SHELL = [
   '/',
   '/app',
@@ -33,16 +33,14 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/')) return; // network-only, never cache
 
-  // static shell: cache-first, refresh in background (stale-while-revalidate)
+  // code files (html/js/css): network-first so deploys are picked up immediately
+  const isCode = /\.(?:html|js|css)$/.test(url.pathname) || url.pathname === '/' || url.pathname === '/app';
   e.respondWith(
-    caches.match(e.request).then((cached) => {
-      const fresh = fetch(e.request)
-        .then((res) => {
-          if (res.ok) caches.open(CACHE).then((c) => c.put(e.request, res.clone()));
-          return res;
-        })
-        .catch(() => cached);
-      return cached || fresh;
-    })
+    fetch(e.request)
+      .then((res) => {
+        if (res.ok) caches.open(CACHE).then((c) => c.put(e.request, res.clone()));
+        return res;
+      })
+      .catch(() => caches.match(e.request).then((c) => c || caches.match(isCode ? '/app' : '/')))
   );
 });

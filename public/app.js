@@ -461,7 +461,7 @@ async function handleAuthForm(e, mode) {
       ? { email, password, workspace_name: elid('wsname') ? elid('wsname').value.trim() : undefined }
       : { email, password };
     await api(`/auth/${mode === 'signup' ? 'signup' : 'signin'}`, { method: 'POST', body });
-    await loadMe();
+    if (!(await loadMe())) { errEl.textContent = 'Signed in, but the session could not be loaded. Please hard-refresh the page (Ctrl+Shift+R) and try again.'; return; }
     location.hash = '#/dashboard';
     toast(mode === 'signup' ? 'Account created. Welcome!' : 'Signed in.', 'success');
   } catch (err) {
