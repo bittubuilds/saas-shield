@@ -633,3 +633,20 @@ td.num, th.num { text-align: right; font-family: var(--mono); }
   .page-head h1 { font-size: 19px; }
   .landing .nav .links a.plain { display: none; }
 }
+
+/* ============================================================
+   Logo lockup — gradient shield + S icon, two-tone wordmark,
+   tracked tagline (brand spec)
+   ============================================================ */
+.logo .wordmark { display: flex; flex-direction: column; line-height: 1.25; }
+.logo .wordmark .name { font-size: 15px; font-weight: 700; color: #d1d5db; letter-spacing: -0.01em; white-space: nowrap; }
+.logo .wordmark .name b { color: #ffffff; font-weight: 700; }
+.logo .wordmark .tagline {
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 1px;
+  white-space: nowrap;
+}
