@@ -178,3 +178,30 @@ The app tests boot two local sites: one containing a deliberately copied 100+ wo
 - No email delivery (password recovery/notifications not wired).
 - Single-process SQLite: suitable for MVP scale, not horizontal scaling.
 - The crawl is polite and bounded; very large sites are only partially fetched (page/depth caps).
+
+## Email provider (Resend)
+
+SaaS Shield sends verification emails and alerts through one HTTP provider; there is
+no SMTP and no bundled mailer. Configuration:
+
+| Variable | Value |
+| --- | --- |
+| `EMAIL_PROVIDER` | `resend` (or `webhook` for your own relay) |
+| `RESEND_API_KEY` | key from resend.com/api-keys. Never commit it. |
+| `EMAIL_FROM` | `SaaS Shield <onboarding@resend.dev>` while testing, then a verified domain |
+
+Check the configuration without sending anything:
+
+```
+node tools/resend-check.js            # prints provider, sender, what is missing
+node tools/resend-check.js you@x.com  # sends one real email through the app's own sender
+```
+
+**The `onboarding@resend.dev` sender only delivers to the address on your own Resend
+account.** It proves the pipeline end to end, but real signups need a verified domain:
+add the domain in Resend, publish the DNS records, then set `EMAIL_FROM` to something
+like `SaaS Shield <no-reply@mail.yourdomain.com>`.
+
+`GET /api/auth/config` reports the live state (`email.configured`, `missing`) so a
+misconfigured deployment is visible instead of silently losing mail. When no provider is
+configured, deliveries are recorded as `skipped` with the reason, never as sent.

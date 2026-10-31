@@ -19,3 +19,11 @@ services:
         value: "false"
       - key: SERPER_API_KEY
         sync: false   # free key from serper.dev - needed only for auto-discovery
+      - key: EMAIL_PROVIDER
+        value: resend
+      - key: EMAIL_FROM
+        value: "SaaS Shield <onboarding@resend.dev>"   # switch to a verified domain sender when you have one
+      - key: RESEND_API_KEY
+        sync: false   # paste the Resend API key in the Render dashboard (never commit it)
+      - key: CRON_SECRET
+        sync: false   # long random string; the external cron job must send the same value
