@@ -17,3 +17,5 @@ services:
         sync: false   # set to your Render URL after first deploy (https://saas-shield.onrender.com)
       - key: SHIELD_ALLOW_PRIVATE_IPS
         value: "false"
+      - key: SERPER_API_KEY
+        sync: false   # free key from serper.dev - needed only for auto-discovery

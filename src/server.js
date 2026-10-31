@@ -14,6 +14,7 @@ const workspaceRoutes = require('./routes/workspace-routes');
 const monitorRoutes = require('./routes/monitor-routes');
 const alertRoutes = require('./routes/alert-routes');
 const internalRoutes = require('./routes/internal-routes');
+const discoverRoutes = require('./routes/discover-routes');
 
 const app = express();
 app.disable('x-powered-by');
@@ -84,6 +85,7 @@ app.use('/api', reportRoutes);
 app.use('/api', workspaceRoutes);
 app.use('/api', monitorRoutes);
 app.use('/api', alertRoutes);
+app.use('/api', discoverRoutes);
 
 // API 404 + error handling
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));
@@ -98,7 +100,19 @@ app.use((err, req, res, next) => {   // eslint-disable-line no-unused-vars
 
 // --- Static frontend ---
 const publicDir = path.join(__dirname, '..', 'public');
-app.use(express.static(publicDir, { index: false, maxAge: '1h', extensions: false }));
+// Code files (html/js/css) use ETag revalidation so deploys are picked up
+// immediately; immutable assets get a short cache. The service worker handles
+// offline caching separately.
+app.use(express.static(publicDir, {
+  index: false,
+  extensions: false,
+  maxAge: 0,
+  etag: true,
+  setHeaders: (res, filePath) => {
+    if (/\.(png|ico|webmanifest)$/.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=3600');
+    else res.setHeader('Cache-Control', 'no-cache');
+  }
+}));
 app.get('/', (req, res) => res.sendFile(path.join(publicDir, 'index.html')));
 app.get('/app', (req, res) => res.sendFile(path.join(publicDir, 'app.html')));
 
