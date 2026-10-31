@@ -1,40 +1,98 @@
 'use strict';
 const path = require('path');
-const fs = require('fs');
 const express = require('express');
 const config = require('./config');
 const db = require('./db');
+const email = require('./email');
 const authRoutes = require('./routes/auth-routes');
+const { requireAuth } = require('./auth');
 const websiteRoutes = require('./routes/website-routes');
 const scanRoutes = require('./routes/scan-routes');
 const resultRoutes = require('./routes/result-routes');
 const reportRoutes = require('./routes/report-routes');
 const workspaceRoutes = require('./routes/workspace-routes');
+const monitorRoutes = require('./routes/monitor-routes');
+const alertRoutes = require('./routes/alert-routes');
+const internalRoutes = require('./routes/internal-routes');
 
 const app = express();
 app.disable('x-powered-by');
-app.set('trust proxy', true);   // for correct client IP behind a reverse proxy
+
+// Trust exactly the configured number of proxy hops. An unbounded value would
+// let a client spoof its IP through X-Forwarded-For and defeat rate limiting.
+if (config.trustProxyHops > 0) {
+  app.set('trust proxy', config.trustProxyHops);
+} else {
+  app.set('trust proxy', false);
+}
 
 app.use(express.json({ limit: '64kb' }));
 
-// Health check for deployment platforms (no auth, no data).
-app.get('/api/health', (req, res) => res.json({ ok: true, uptime: process.uptime() }));
+// Security headers. No user-controlled HTML is rendered by the API, and the
+// frontend escapes all interpolated data, so a strict script-src is viable.
+app.use((req, res, next) => {
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.set('X-Frame-Options', 'DENY');
+  res.set('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.set('Content-Security-Policy', [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "font-src 'self'",
+    "connect-src 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "object-src 'none'"
+  ].join('; '));
+  if (config.cookieSecure) {
+    res.set('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
+  }
+  next();
+});
+
+// Health check for deployment platforms. No auth, no data, no secrets.
+app.get('/api/health', (req, res) => {
+  let dbOk = true;
+  try {
+    db.prepare('SELECT 1').get();
+  } catch {
+    dbOk = false;
+  }
+  res.status(dbOk ? 200 : 503).json({
+    ok: dbOk,
+    uptime: Math.round(process.uptime()),
+    env: config.nodeEnv,
+    email_configured: email.describeConfig().configured,
+    google_oauth_configured: config.oauth.google.configured,
+    scheduler_enabled: config.scheduler.enabled,
+    external_cron_configured: Boolean(config.scheduler.cronSecret)
+  });
+});
 
 // --- API ---
 app.use('/api/auth', authRoutes);
+// The SPA reads the session from /api/me (see public/app.js). Keep it working.
+app.get('/api/me', requireAuth, authRoutes.meHandler);
+app.use('/api/internal', internalRoutes);
 app.use('/api', websiteRoutes.router);
 app.use('/api', scanRoutes);
 app.use('/api', resultRoutes);
 app.use('/api', reportRoutes);
 app.use('/api', workspaceRoutes);
+app.use('/api', monitorRoutes);
+app.use('/api', alertRoutes);
 
 // API 404 + error handling
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));
 app.use((err, req, res, next) => {   // eslint-disable-line no-unused-vars
-  // Never leak stack traces to clients.
+  // Never leak stack traces to clients. Request bodies, cookies and tokens are
+  // never logged.
   const status = err && err.status ? err.status : 500;
   const msg = status >= 500 ? 'Internal server error.' : (err && err.message) || 'Error.';
-  if (status >= 500) console.error('[error]', req.method, req.path, err && err.message); // no bodies/tokens logged
+  if (status >= 500) console.error('[error]', req.method, req.path, err && err.message);
   res.status(status).json({ error: msg });
 });
 
@@ -52,6 +110,36 @@ const server = app.listen(config.port, config.host, () => {
   if (config.ssrf.allowPrivateIps) {
     console.warn('WARNING: SHIELD_ALLOW_PRIVATE_IPS is true. SSRF protections are relaxed - local/dev mode only.');
   }
+  if (!email.describeConfig().configured) {
+    console.warn('NOTE: no email provider configured. Verification and alert emails will be recorded as skipped.');
+  }
+  if (!config.oauth.google.configured) {
+    console.log('NOTE: Google sign-in is not configured (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET).');
+  }
 });
+
+// The in-process scheduler is useful for a long-running process, but it is not
+// a guarantee: on hosts that sleep idle instances it stops while asleep. The
+// /api/internal/cron endpoint exists for that case.
+let scheduler = null;
+if (config.scheduler.enabled && config.nodeEnv !== 'test') {
+  scheduler = require('./scheduler');
+  scheduler.start();
+}
+
+let shuttingDown = false;
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[server] ${signal} received, shutting down`);
+  if (scheduler) scheduler.stop();
+  server.close(() => {
+    try { db.close(); } catch { /* already closed */ }
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(0), 8000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 module.exports = { app, server };

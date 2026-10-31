@@ -30,6 +30,23 @@ router.get('/workspaces/:workspaceId/dashboard', requireWorkspace(), (req, res) 
 
   const failingSites = db.prepare(`SELECT id, submitted_url, crawl_error FROM websites WHERE workspace_id=? AND crawl_status='failed' LIMIT 5`).all(ws);
 
+  // Monitoring + changelog counters (real rows only).
+  const monitoredSites = db.prepare(`SELECT COUNT(*) c FROM websites WHERE workspace_id=? AND monitor_enabled=1`).get(ws).c;
+  const monitoredPages = db.prepare('SELECT COUNT(*) c FROM monitored_pages WHERE workspace_id=? AND enabled=1').get(ws).c;
+  const changes7d = db.prepare('SELECT COUNT(*) c FROM changes WHERE workspace_id=? AND detected_at >= ?')
+    .get(ws, new Date(Date.now() - 7 * 86400000).toISOString()).c;
+  const changesOpen = db.prepare("SELECT COUNT(*) c FROM changes WHERE workspace_id=? AND status='open'").get(ws).c;
+  const unreadAlerts = db.prepare("SELECT COUNT(*) c FROM alerts WHERE workspace_id=? AND status='unread'").get(ws).c;
+  const failingPages = db.prepare("SELECT COUNT(*) c FROM monitored_pages WHERE workspace_id=? AND last_status='failed'").get(ws).c;
+  const nextCheck = db.prepare(`SELECT MIN(p.next_check_at) m FROM monitored_pages p JOIN websites w ON w.id=p.website_id
+      WHERE p.workspace_id=? AND p.enabled=1 AND w.monitor_enabled=1`).get(ws).m;
+
+  const recentChanges = db.prepare(`
+    SELECT c.id, c.category, c.summary, c.detected_at, c.significance_label, c.page_url, c.status,
+           w.submitted_url AS website_url
+    FROM changes c JOIN websites w ON w.id=c.website_id
+    WHERE c.workspace_id=? ORDER BY c.detected_at DESC LIMIT 6`).all(ws);
+
   res.json({
     monitored_websites: monitored,
     last_successful_scan: lastScan,
@@ -40,7 +57,15 @@ router.get('/workspaces/:workspaceId/dashboard', requireWorkspace(), (req, res) 
     findings_total: totalFindings,
     recent_scans: recentScans,
     recent_results: recentResults,
-    failing_websites: failingSites
+    failing_websites: failingSites,
+    monitored_websites_count: monitoredSites,
+    monitored_pages: monitoredPages,
+    changes_last_7_days: changes7d,
+    changes_open: changesOpen,
+    alerts_unread: unreadAlerts,
+    failing_monitored_pages: failingPages,
+    next_check_at: nextCheck,
+    recent_changes: recentChanges
   });
 });
 
@@ -50,11 +75,22 @@ router.get('/workspaces/:workspaceId/settings', requireWorkspace(), (req, res) =
     SELECT m.user_id, m.role, m.created_at, u.email
     FROM memberships m JOIN users u ON u.id = m.user_id
     WHERE m.workspace_id=? ORDER BY m.created_at`).all(req.workspace.id);
+  const alerts = require('../alerts');
+  const email = require('../email');
+  const notificationSettings = alerts.getSettings(req.workspace.id);
   res.json({
     workspace: { id: req.workspace.id, name: req.workspace.name, role: req.workspace.role },
     members,
-    notifications: { email_on_new_findings: false },
-    note: 'Email notifications are not wired in this build; preferences are stored for future use.'
+    notifications: {
+      immediate_email: Boolean(notificationSettings.immediate_email),
+      digest_enabled: Boolean(notificationSettings.digest_enabled),
+      digest_day: notificationSettings.digest_day,
+      digest_hour_utc: notificationSettings.digest_hour_utc,
+      min_severity: notificationSettings.min_severity,
+      include_empty_digest: Boolean(notificationSettings.include_empty_digest)
+    },
+    email: email.describeConfig(),
+    note: 'Notification preferences are stored server-side and applied by the scheduler. Email delivery depends on the configured provider.'
   });
 });
 
@@ -66,7 +102,7 @@ router.patch('/workspaces/:workspaceId/settings', requireWorkspace(), requireAdm
     db.prepare('UPDATE workspaces SET name=? WHERE id=?').run(clean, req.workspace.id);
     audit(req.workspace.id, req.user.id, 'workspace.renamed', { name: clean });
   }
-  res.json({ ok: true, note: 'Notification preferences are stored client-side in this build; email delivery is not wired.' });
+  res.json({ ok: true });
 });
 
 // Invite/add member by email (must already have an account) - admin only.

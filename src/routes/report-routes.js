@@ -7,6 +7,15 @@ const { requireAuth, requireWorkspace, audit } = require('../auth');
 const router = express.Router();
 router.use(requireAuth);
 
+function safeJson(value, fallback) {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed === null || parsed === undefined ? fallback : parsed;
+  } catch {
+    return fallback;
+  }
+}
+
 // Collect report data for one result or a whole workspace (filtered).
 function buildReport(wsId, resultId) {
   let rows;
@@ -18,6 +27,7 @@ function buildReport(wsId, resultId) {
                        ORDER BY jaccard_score DESC LIMIT 500`).all(wsId);
   }
   const findings = rows.map((r) => {
+    const signals = safeJson(r.signals, {});
     const passages = db.prepare('SELECT original_text, comparison_text, word_count, score FROM passages WHERE result_id=? ORDER BY word_count DESC LIMIT 5').all(r.id);
     const evidence = db.prepare('SELECT * FROM evidence WHERE result_id=?').get(r.id);
     return {
@@ -27,7 +37,12 @@ function buildReport(wsId, resultId) {
       similarity: {
         jaccard_score: r.jaccard_score,
         cosine_score: r.cosine_score,
-        method: 'word-shingle Jaccard (k=5) + TF-IDF cosine + longest common word passages'
+        structural_score: r.structural_score,
+        verdict: signals.verdict || null,
+        verdict_explanation: signals.verdict_explanation || null,
+        signals,
+        limitations: safeJson(r.limitations, []),
+        method: signals.method || 'word-shingle Jaccard (k=5, k=3) + pair-wise TF-IDF cosine + longest common word passages'
       },
       original_url: r.original_url,
       comparison_url: r.comparison_url,
@@ -57,14 +72,17 @@ function buildReport(wsId, resultId) {
     workspace: ws ? { id: ws.id, name: ws.name } : null,
     methodology: [
       'Content is fetched from the public URLs listed. Readable text is extracted, normalizing whitespace and Unicode, and removing common boilerplate (navigation, headers, footers, cookie notices) plus words that repeat across nearly all pages of the same site.',
-      'Similarity is computed deterministically: 5-word shingle Jaccard overlap, TF-IDF cosine similarity across the scanned corpus, and extraction of the longest shared word passages.',
+      'Similarity is computed deterministically: 5-word and 3-word shingle Jaccard overlap, pair-wise TF-IDF cosine similarity, and extraction of the longest shared word passages.',
+      'A cosine-only agreement is not treated as a finding unless short-phrase overlap also clears a floor. This prevents ordinary shared industry vocabulary from being reported as copying.',
+      'Structural similarity (headings, sections, links, calls to action, images, form fields) is reported separately. Shared layout conventions produce high structural scores between unrelated sites and are not evidence of copying.',
       'Scores measure textual overlap between two public pages. A "potential match" means the system observed substantial shared text. It does NOT prove ownership, intent, or legal infringement.'
     ],
     limitations: [
       'Only pages accessible without login were analyzed.',
       'Screenshots are not captured in this build; evidence is the stored text excerpt and its SHA-256 content hash at capture time.',
       'Pages change over time; re-fetching a URL may produce different content.',
-      'Generic phrases common in many websites can overlap without any copying.'
+      'Generic phrases common in many websites can overlap without any copying.',
+      'Visual similarity (screenshots, fonts, rendered layout) is not measured in this build.'
     ],
     findings_count: findings.length,
     findings

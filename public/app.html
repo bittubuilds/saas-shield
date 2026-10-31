@@ -16,12 +16,5 @@
 <div id="root"></div>
 <div class="toast-wrap" id="toasts" aria-live="polite"></div>
 <script src="/app.js"></script>
-<script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => { /* offline shell optional */ });
-  });
-}
-</script>
 </body>
 </html>

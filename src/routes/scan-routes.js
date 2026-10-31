@@ -17,6 +17,7 @@ router.post('/workspaces/:workspaceId/scans', requireWorkspace(), createLimiter,
   const orig = db.prepare('SELECT * FROM websites WHERE id=? AND workspace_id=?').get(original_website_id, req.workspace.id);
   const comp = db.prepare('SELECT * FROM websites WHERE id=? AND workspace_id=?').get(comparison_website_id, req.workspace.id);
   if (!orig || !comp) return res.status(404).json({ error: 'Website not found in this workspace.' });
+  if (orig.id === comp.id) return res.status(400).json({ error: 'Choose two different websites to compare.' });
   if (orig.status === 'paused' || comp.status === 'paused') {
     return res.status(400).json({ error: 'Both websites must be active to scan. Resume paused websites first.' });
   }

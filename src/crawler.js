@@ -5,6 +5,7 @@
 const config = require('./config');
 const { assertSafeUrl, UnsafeUrlError, normalizeUrl, domainOf } = require('./ssrf');
 const { extractReadable, extractLinks } = require('./extract');
+const { extractStructure } = require('./structure');
 const { sha256, newId, utcNow } = require('./util');
 
 const MAX_REDIRECTS = 5;
@@ -206,6 +207,7 @@ async function crawlSite(website, onPage, opts = {}) {
     }
 
     const page = extractReadable(fetched.html, fetched.finalUrl);
+    const structure = extractStructure(fetched.html, fetched.finalUrl, page);
     const hash = sha256(page.text);
     const dup = seenHashes.has(hash);
     seenHashes.add(hash);
@@ -223,6 +225,15 @@ async function crawlSite(website, onPage, opts = {}) {
       content_hash: hash,
       http_status: fetched.httpStatus,
       fetched_at: utcNow(),
+      structure: JSON.stringify({
+        headings: structure.headings,
+        links: structure.links,
+        images: structure.images,
+        ctas: structure.ctas,
+        forms: structure.forms,
+        sections: structure.sections,
+        wordCount: structure.wordCount
+      }),
       duplicate: dup
     });
     if (!dup) stored += 1;

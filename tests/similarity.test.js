@@ -117,3 +117,160 @@ test('normalization: unicode, case, whitespace differences do not hide copying',
   assert.equal(r.isFinding, true);
   assert.ok(r.jaccard >= 0.95, `jaccard ${r.jaccard}`);
 });
+
+// ---------------------------------------------------------------------------
+// Regression: per-pair scoring (the original cosine bug)
+// ---------------------------------------------------------------------------
+test('each page pair gets its own cosine score, not the first pair in the corpus', () => {
+  // Four documents where doc1/doc2 are near-identical and doc3/doc4 share nothing
+  // with them. The old implementation built corpus vectors and read vectors[0]
+  // and vectors[1] for every pair, so every pair reported the same cosine.
+  const d1 = `${words(90, 'alpha')} shared workflow automation engine analytics`;
+  const d2 = `${d1} extra clause`;
+  const d3 = `${words(90, 'omega')} printing press movable type gutenberg`;
+  const d4 = `${words(90, 'sigma')} warehouse dock carrier routing timeline`;
+  const corpus = [d1, d2, d3, d4].map((t) => sim.tokenize(t));
+
+  const close = sim.compareTexts(d1, d2, { corpusTokens: corpus });
+  const far = sim.compareTexts(d3, d4, { corpusTokens: corpus });
+  const cross = sim.compareTexts(d1, d4, { corpusTokens: corpus });
+
+  assert.ok(close.cosine > 0.9, `near-identical pair should score high, got ${close.cosine}`);
+  assert.ok(far.cosine < 0.05, `unrelated pair should score ~0, got ${far.cosine}`);
+  assert.ok(cross.cosine < 0.2, `cross pair should score low, got ${cross.cosine}`);
+  assert.notEqual(close.cosine, far.cosine, 'pairs must not share a score');
+  // Two unrelated pairs may both legitimately score 0; what matters is that the
+  // close pair does not (the old bug gave all 35 real pairs one identical score).
+  assert.equal(far.cosine, 0);
+  assert.equal(cross.cosine, 0);
+
+  // The reported cosine must equal a direct two-document computation.
+  const direct = sim.cosine(
+    sim.tfidfVectors([sim.tokenize(d3), sim.tokenize(d4)])[0],
+    sim.tfidfVectors([sim.tokenize(d3), sim.tokenize(d4)])[1]
+  );
+  assert.ok(Math.abs(far.cosine - sim.round4(direct)) < 0.0002,
+    `corpus cosine ${far.cosine} should match the pair's own cosine ${direct}`);
+});
+
+test('a cosine-only agreement cannot raise a finding on its own', () => {
+  // Same vocabulary domain, no shared phrasing. This is what produced the false
+  // positive on two unrelated portfolio sites (cosine 0.31, no passages, 3-gram
+  // overlap 0.007).
+  const a = 'Workflow automation for operations. Track handoffs, retry failed steps ' +
+    'automatically, and keep a permanent audit trail of every run so nothing is lost ' +
+    'between shifts. Connect your tools in minutes and let the engine handle the rest ' +
+    'while your team focuses on the customers who need attention today.';
+  const b = 'Automation tooling for finance. Reconcile ledgers nightly, chase unpaid ' +
+    'invoices politely, and export an audit trail before every board meeting. Your ' +
+    'accountants connect their spreadsheets and the platform keeps watch over every ' +
+    'entry, flagging the ones that look unusual before close.';
+  const r = sim.compareTexts(a, b, { corpusTokens: [sim.tokenize(a), sim.tokenize(b)] });
+  assert.ok(r.cosine > 0.15, `expected topical cosine, got ${r.cosine}`);
+  assert.ok(r.jaccard3 < 0.05, `expected low short-phrase overlap, got ${r.jaccard3}`);
+  assert.equal(r.isFinding, false, 'topical overlap alone is not evidence of copying');
+  assert.equal(r.verdict, 'no_evidence');
+});
+
+// ---------------------------------------------------------------------------
+// Structural comparison and verdicts
+// ---------------------------------------------------------------------------
+function structureOf({ headings, sections = [], links = [], ctas = [], images = [], forms = [] }) {
+  return {
+    headings: headings.map((h, i) => ({ level: i === 0 ? 1 : 2, text: h })),
+    links: links.map((href) => ({ href, text: href })),
+    ctas, images: images.map((src) => ({ src, alt: '' })), forms,
+    sections: sections.map((heading) => ({ heading, approxWords: 40 }))
+  };
+}
+
+test('structural comparison separates shared layout from shared content', () => {
+  const a = structureOf({
+    headings: ['Welcome to Acme', 'What we do', 'Pricing'],
+    sections: ['What we do', 'Pricing'],
+    links: ['https://acme.example/pricing', 'https://acme.example/about'],
+    ctas: ['Start free'], images: ['https://acme.example/me.png']
+  });
+  const b = structureOf({
+    headings: ['Hi, I am Bea', 'What I do', 'Contact'],
+    sections: ['What I do', 'Contact'],
+    links: ['https://bea.example/work', 'https://bea.example/contact'],
+    ctas: ['Hire me'], images: ['https://bea.example/avatar.jpg']
+  });
+
+  const cs = sim.compareStructure(a, b);
+  assert.equal(cs.headings.score, 0, 'no shared heading text');
+  assert.equal(cs.links.score, 0, 'no shared links');
+  assert.equal(cs.ctas.score, 0);
+  // Both are single-column pages with a headline, sections, a CTA and a portrait.
+  assert.ok(cs.layout.shared.count >= 2, JSON.stringify(cs.layout.shared));
+  assert.ok(cs.layout.shared.shared.some((s) => s.key === 'avatar_or_portrait'));
+
+  const same = sim.compareStructure(a, a);
+  assert.equal(same.score, 1, 'a structure compared with itself matches fully');
+  assert.ok(same.score > cs.score);
+});
+
+test('pages that share a layout but no wording are labelled shared conventions', () => {
+  const layoutA = structureOf({
+    headings: ['Acme builds automations', 'Features', 'Pricing'],
+    sections: ['Features', 'Pricing'],
+    ctas: ['Get started'], images: ['https://acme.example/me.png'],
+    forms: [{ fields: [{ name: 'email' }], submit: 'Join' }]
+  });
+  const layoutB = structureOf({
+    headings: ['Kite writes essays', 'Writing', 'Contact'],
+    sections: ['Writing', 'Contact'],
+    ctas: ['Read more'], images: ['https://kite.example/avatar.png'],
+    forms: [{ fields: [{ name: 'email' }], submit: 'Subscribe' }]
+  });
+  const textA = `${words(80, 'acme')} We automate recurring operations work for logistics teams.`;
+  const textB = `${words(80, 'kite')} I write long essays about urban planning and transit.`;
+
+  const r = sim.compareTexts(textA, textB, { structureA: layoutA, structureB: layoutB });
+  assert.equal(r.isFinding, false);
+  assert.equal(r.verdict, 'shared_conventions');
+  assert.ok(r.signals.shared_layout_conventions.length >= 2);
+  assert.match(sim.verdictExplanation(r.verdict), /not evidence that content was copied/i);
+  assert.ok(r.limitations.some((l) => /Structural similarity|Visual similarity/i.test(l)));
+});
+
+test('structural comparison tolerates missing or partial structures', () => {
+  for (const pair of [[{}, {}], [null, { headings: [{ level: 1, text: 'x' }] }], [{ links: [] }, undefined]]) {
+    const r = sim.compareTexts('some text here for both sides to compare', 'some other words entirely', {
+      structureA: pair[0], structureB: pair[1]
+    });
+    assert.equal(typeof r.jaccard, 'number');
+    assert.equal(r.isFinding, false);
+    const cs = sim.compareStructure(pair[0], pair[1]);
+    assert.equal(typeof cs.score, 'number');
+    assert.ok(Number.isFinite(cs.score));
+  }
+});
+
+test('every verdict has a plain-language explanation and a documented method', () => {
+  const verdicts = ['verbatim_passage', 'copied_passage', 'high_shingle_overlap', 'distributed_overlap', 'shared_conventions', 'no_evidence'];
+  for (const v of verdicts) {
+    const text = sim.verdictExplanation(v);
+    assert.ok(text.length > 40, `${v} needs a real explanation`);
+  }
+  const r = sim.compareTexts(ORIGINAL, ORIGINAL);
+  assert.match(r.method, /Jaccard|cosine/);
+  assert.ok(r.signals.thresholds.min_passage_words >= 1, 'thresholds are recorded with the result');
+  assert.ok(r.explanation.passages.includes('words'));
+  // The engine must never make a legal claim, and must always carry the caveat.
+  const everything = [r.verdict, sim.verdictExplanation(r.verdict), ...r.limitations].join(' ');
+  assert.ok(!/\bis (?:clear )?(?:copyright )?infringement\b|\bhas plagiaris/i.test(everything), 'no legal claims in output');
+  assert.match(everything, /not a probability of infringement|not a legal conclusion/i, 'the caveat is present');
+});
+
+test('matched passage text is identical on both sides (evidence integrity)', () => {
+  const copied = 'Trusted by more than two thousand companies across forty countries, our product delivers real-time analytics and enterprise-grade security out of the box.';
+  const other = `${words(70, 'quux')} ${copied} ${words(30, 'delta')}`;
+  const r = sim.compareTexts(ORIGINAL, other);
+  assert.ok(r.passages.length >= 1);
+  for (const p of r.passages) {
+    assert.equal(p.aText, p.bText, 'a reported passage must be word-for-word on both pages');
+    assert.ok(p.wordCount >= 12);
+  }
+});

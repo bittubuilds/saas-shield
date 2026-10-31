@@ -8,19 +8,41 @@ const ENTITIES = {
   hellip: '…', copy: '©', reg: '®', trade: '™', rsquo: '\u2019', lsquo: '\u2018',
   ldquo: '\u201c', rdquo: '\u201d', laquo: '«', raquo: '»', deg: '°', middot: '·',
   bull: '•', dagger: '†', sect: '§', para: '¶', eacute: 'é', egrave: 'è',
-  agrave: 'à', ccedil: 'ç', uuml: 'ü', ouml: 'ö', auml: 'ä', szlig: 'ß'
+  agrave: 'à', ccedil: 'ç', uuml: 'ü', ouml: 'ö', auml: 'ä', szlig: 'ß',
+  euro: '€', pound: '£', yen: '¥', cent: '¢', times: '×', divide: '÷', plusmn: '±',
+  frac12: '½', frac14: '¼', frac34: '¾', sup2: '²', sup3: '³', micro: 'µ'
 };
 
 function decodeEntities(s) {
   return s
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
-    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => {
+      const cp = parseInt(h, 16);
+      return cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : '';
+    })
+    .replace(/&#(\d+);/g, (_, d) => {
+      const cp = parseInt(d, 10);
+      return cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : '';
+    })
     .replace(/&([a-zA-Z][a-zA-Z0-9]*);/g, (m, name) => ENTITIES[name] || m);
 }
 
 const SKIP_TAGS = new Set(['script', 'style', 'noscript', 'template', 'svg', 'iframe', 'canvas', 'object', 'embed', 'form', 'select', 'option']);
 const BOILERPLATE_TAGS = new Set(['nav', 'header', 'footer', 'aside']);
 const BOILERPLATE_HINT = /(cookie|consent|gdpr|banner|navigation|menu|skip[-_ ]?to|subscribe|newsletter|social|share|breadcrumb|pagination|copyright|all rights reserved)/i;
+
+function stripCommentsAndScripts(html) {
+  return String(html)
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<(script|style|noscript|template|svg|iframe|canvas|object|embed|form|select|option)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ');
+}
+
+// Remove repeated site chrome so extracted content is the page's own content.
+function stripChrome(html) {
+  let s = stripCommentsAndScripts(html);
+  s = removeTagBlocks(s, BOILERPLATE_TAGS);
+  s = removeHintedDivs(s);
+  return s;
+}
 
 function extractReadable(html, baseUrl) {
   const out = {
@@ -55,15 +77,7 @@ function extractReadable(html, baseUrl) {
     if (c) out.metaDescription = decodeEntities(c[1]).replace(/\s+/g, ' ').trim().slice(0, 500);
   }
 
-  // Strip tags we never want, and remove comments.
-  let s = html
-    .replace(/<!--[\s\S]*?-->/g, ' ')
-    .replace(/<(script|style|noscript|template|svg|iframe|canvas|object|embed|form|select|option)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ');
-
-  // Remove boilerplate containers by walking with a simple scanner:
-  // drop nav/header/footer/aside blocks and elements whose class/id look like boilerplate.
-  s = removeTagBlocks(s, BOILERPLATE_TAGS);
-  s = removeHintedDivs(s);
+  let s = stripChrome(html);
 
   // Convert block-level boundaries to spaces, strip remaining tags.
   s = s
@@ -103,7 +117,7 @@ function removeTagBlocks(s, tags) {
 }
 
 function removeHintedDivs(s) {
-  // Drop <div|section> elements whose class/id contain boilerplate hints.
+  // Drop <div|section|span> elements whose class/id contain boilerplate hints.
   const re = /<(div|section|span)\b[^>]*\b(class|id)\s*=\s*["'][^"']*["'][^>]*>/gi;
   let out = '';
   let last = 0;
@@ -146,4 +160,4 @@ function extractLinks(html, baseUrl, sameSiteOnly = true) {
   return [...links];
 }
 
-module.exports = { extractReadable, extractLinks, decodeEntities };
+module.exports = { extractReadable, extractLinks, decodeEntities, stripChrome, stripCommentsAndScripts };

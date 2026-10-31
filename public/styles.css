@@ -642,3 +642,74 @@ td.num, th.num { text-align: right; font-family: var(--mono); }
 .sidebar .logo-img { height: 48px; }
 .auth-brand .logo-img { height: 72px; }
 .footer .logo-img { height: 48px; }
+
+/* ---------------------------------------------------------------------------
+   Change monitoring: changelog, alerts, evidence
+   Uses the existing dark-theme tokens; no new palette, no decoration.
+   --------------------------------------------------------------------------- */
+.notice {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0 0 4px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  background: var(--raised);
+  color: var(--text);
+}
+.notice.warn {
+  border-left-color: var(--danger);
+  background: rgba(248, 113, 113, 0.08);
+}
+.notice code {
+  font-size: 12px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--input);
+  color: var(--text);
+}
+
+.evidence-list {
+  margin: 6px 0 14px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+}
+.evidence-list li { margin-bottom: 6px; }
+.evidence-list.added li::marker { color: var(--ok); }
+.evidence-list.removed li::marker { color: var(--danger); }
+.evidence-list.removed li {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: rgba(248, 113, 113, 0.5);
+}
+
+pre.snapshot-text {
+  max-height: 380px;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+table td.num, table th.num { font-variant-numeric: tabular-nums; }
+tr.dim td { opacity: 0.6; }
+
+.badge.status-failed { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
+.badge.status-running { background: rgba(96, 165, 250, 0.16); color: #93c5fd; }
+.badge.status-queued { background: rgba(251, 191, 36, 0.16); color: #fcd34d; }
+.badge.status-completed { background: rgba(52, 211, 153, 0.16); color: #6ee7b7; }
+
+@media (max-width: 720px) {
+  .grid.cols-3, .grid.cols-4 { grid-template-columns: 1fr 1fr; }
+  pre.snapshot-text { max-height: 260px; }
+}

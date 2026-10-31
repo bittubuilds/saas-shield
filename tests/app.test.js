@@ -8,6 +8,9 @@ process.env.DATABASE_FILE = require('fs').mkdtempSync(require('path').join(requi
 process.env.SHIELD_ALLOW_PRIVATE_IPS = 'true';   // local test sites only
 process.env.CRAWL_DELAY_MS = '50';
 process.env.AUTH_RATE_LIMIT = '100';
+// This suite exercises the product flow end to end. Email verification has its
+// own dedicated suite (auth-verification.test.js) where it is required.
+process.env.AUTH_REQUIRE_EMAIL_VERIFICATION = 'false';
 process.env.COOKIE_SECURE = 'false';
 
 const { test } = require('node:test');
@@ -134,8 +137,14 @@ test('complete user journey: signup, websites, real scan, review, export, persis
   assert.equal(signup.status, 201);
   const wsId = signup.data.workspace.id;
   assert.ok(wsId);
+  // Re-registering an existing verified address returns the same generic 201 as
+  // a fresh signup: the endpoint must not reveal whether an account exists.
   const badSignup = await a.req('POST', '/auth/signup', { email: 'founder@example.com', password: 'longpassword1' });
-  assert.equal(badSignup.status, 409);
+  assert.equal(badSignup.status, 201);
+  assert.equal(badSignup.data.workspace, undefined, 'existing account must not return a workspace');
+  assert.equal(badSignup.data.user, undefined, 'existing account must not return a user');
+  assert.equal(badSignup.data.ok, true);
+  assert.match(badSignup.data.message, /confirmation email|registered/i);
   const weakPw = await a.req('POST', '/auth/signup', { email: 'x@example.com', password: 'short' });
   assert.equal(weakPw.status, 400);
 

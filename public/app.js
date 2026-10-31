@@ -78,6 +78,9 @@ const ICONS = {
 
 const NAV = [
   ['#/dashboard', 'Dashboard', 'dash'],
+  ['#/changes', 'Changelog', 'doc'],
+  ['#/alerts', 'Alerts', 'bolt'],
+  ['#/monitoring', 'Monitoring', 'scans'],
   ['#/websites', 'Websites', 'sites'],
   ['#/scans', 'Scans', 'scans'],
   ['#/results', 'Findings', 'results'],
@@ -103,7 +106,13 @@ function shell(content, activeRoute) {
         <button class="navlink" style="width:100%;border:none;background:none;text-align:left" id="signoutBtn">${ICONS.signout} Sign out</button>
       </div>
     </aside>
-    <main class="main" id="main">${content}</main>
+    <main class="main" id="main">
+      ${me && me.user && me.user.email_verified === false ? `<div class="notice warn" style="margin-bottom:16px;">
+        <strong>Your email address is not confirmed.</strong> Confirm it to receive alerts and digests at ${esc(me.user.email)}.
+        <button class="btn ghost sm" id="resendVerifyBtn" type="button" style="margin-left:8px;">Resend email</button>
+      </div>` : ''}
+      ${content}
+    </main>
     <nav class="mobile-nav">${mobileLinks}</nav>
   </div>`;
 }
@@ -143,8 +152,8 @@ async function dashboardView() {
   <div class="page-head">
     <div><h1>Dashboard</h1><p>Real data from your workspace - no sample records.</p></div>
     <div style="display:flex; gap:10px;">
-      <a class="btn secondary" href="#/websites">Manage websites</a>
-      <a class="btn" href="#/scans/new">New scan</a>
+      <a class="btn secondary" href="#/monitoring">Monitoring</a>
+      <a class="btn secondary" href="#/scans/new">New scan</a>
     </div>
   </div>
   <div class="grid cols-4">
@@ -398,6 +407,61 @@ async function resultDetailView(id) {
   <p class="muted small" style="margin-top:18px;">This record shows what the system observed on public pages at capture time. It does not independently prove ownership, intent, or infringement.</p>`;
 }
 
+function renderVerificationSent(email, verification) {
+  const skipped = verification.delivery === 'skipped';
+  const devLink = verification.dev_link;
+  root.innerHTML = `
+  <div class="auth-wrap"><div class="auth-card">
+    <div class="auth-brand"><a class="logo" href="/">${LOGO_LOCKUP}</a></div>
+    <div class="card">
+      <h2>Confirm your email</h2>
+      <p class="subhead">We need to confirm <strong>${esc(email)}</strong> before your workspace is activated.</p>
+      ${skipped ? `<div class="notice warn">
+        <strong>No email was sent.</strong> This deployment has no email provider configured, so the confirmation link could not be delivered.
+        ${devLink ? `For local development, use this link: <a href="${esc(devLink)}">confirm now</a>.` : 'Set up an email provider (see README) and use "Resend".'}
+      </div>` : `<div class="notice">The link in that email works once and expires in ${esc(String(verification.expires_at || '24 hours').slice(0, 10) || '24 hours')}.</div>`}
+      ${devLink && !skipped ? `<p class="small muted">Development link: <a href="${esc(devLink)}">confirm now</a></p>` : ''}
+      <p class="small muted" style="margin-top:14px;">Nothing arrived? Check spam, or
+        <button class="btn ghost sm" id="resendBtn" type="button">resend the confirmation email</button>.</p>
+      <p class="small muted" style="margin-top:10px;"><a href="#/signin">Back to sign in</a></p>
+    </div>
+  </div></div>`;
+  const btn = elid('resendBtn');
+  if (btn) btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      const r = await api('/auth/verify/resend', { method: 'POST', body: { email } });
+      toast(r.verification && r.verification.delivery === 'skipped'
+        ? 'No email provider configured, so nothing was sent.'
+        : 'Confirmation email sent.', r.verification && r.verification.delivery === 'skipped' ? 'error' : 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+function verifyFailedView(reason) {
+  const messages = {
+    expired: 'That confirmation link has expired.',
+    used: 'That confirmation link has already been used. Sign in if your address is confirmed.',
+    invalidated: 'A newer confirmation email was sent, so this link no longer works. Use the most recent one.',
+    invalid: 'That confirmation link is not valid.',
+    missing_token: 'That link is missing its confirmation token.'
+  };
+  return `
+  <div class="auth-wrap"><div class="auth-card">
+    <div class="auth-brand"><a class="logo" href="/">${LOGO_LOCKUP}</a></div>
+    <div class="card">
+      <h2>Confirmation failed</h2>
+      <p class="subhead">${esc(messages[reason] || 'This confirmation link could not be used.')}</p>
+      <p class="small muted">Request a new link from the sign-in page, or sign in if you have already confirmed your address.</p>
+      <a class="btn block" href="#/signin">Go to sign in</a>
+    </div>
+  </div></div>`;
+}
+
 async function settingsView() {
   const s = await api(`/workspaces/${wsId}/settings`);
   return `
@@ -429,9 +493,49 @@ async function settingsView() {
     </div>
   </div>
   <div class="card" style="margin-top:16px;">
-    <h3>Notification preferences</h3>
-    <label style="display:flex; gap:9px; align-items:center;"><input type="checkbox" id="notifFindings" style="width:auto;"> Email me when new potential matches are found</label>
-    <p class="muted small" style="margin-top:10px;">${esc(s.note)}</p>
+    <h3>Notifications</h3>
+    ${s.email && !s.email.configured ? `<div class="notice warn" style="margin-bottom:14px;">
+      <strong>No email provider is configured on this deployment.</strong> Alerts and digests are recorded in the app but cannot be emailed.
+      ${(s.email.missing || []).length ? `Missing: ${s.email.missing.map((m) => `<code>${esc(m)}</code>`).join(', ')}` : ''}
+    </div>` : ''}
+    <form id="notifForm" novalidate>
+      <div class="grid cols-2">
+        <div class="field">
+          <label><input type="checkbox" id="notifImmediate" style="width:auto;" ${s.notifications.immediate_email ? 'checked' : ''}> Email me immediately for important changes</label>
+          <div class="hint">Only changes at or above the severity below are emailed right away.</div>
+        </div>
+        <div class="field">
+          <label for="notifSeverity">Minimum severity for email</label>
+          <select id="notifSeverity">
+            ${['info', 'normal', 'high', 'critical'].map((v) => `<option value="${v}" ${s.notifications.min_severity === v ? 'selected' : ''}>${v}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="grid cols-3">
+        <div class="field">
+          <label><input type="checkbox" id="notifDigest" style="width:auto;" ${s.notifications.digest_enabled ? 'checked' : ''}> Weekly digest</label>
+        </div>
+        <div class="field"><label for="notifDay">Digest day (UTC)</label>
+          <select id="notifDay">
+            ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((d, i) => `<option value="${i}" ${Number(s.notifications.digest_day) === i ? 'selected' : ''}>${d}</option>`).join('')}
+          </select></div>
+        <div class="field"><label for="notifHour">Hour (UTC)</label>
+          <select id="notifHour">
+            ${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${Number(s.notifications.digest_hour_utc) === h ? 'selected' : ''}>${String(h).padStart(2, '0')}:00</option>`).join('')}
+          </select></div>
+      </div>
+      <div class="field"><label><input type="checkbox" id="notifEmpty" style="width:auto;" ${s.notifications.include_empty_digest ? 'checked' : ''}> Send the digest even when nothing changed</label></div>
+      <div class="form-error" id="notifError" role="alert"></div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn" type="submit" ${s.workspace.role === 'member' ? 'disabled title="Admin role required"' : ''}>Save preferences</button>
+        <button class="btn secondary" type="button" id="testEmailBtn">Send test email</button>
+      </div>
+    </form>
+    <p class="small muted" style="margin-top:12px;">
+      Recipients: ${(s.recipients || []).map((r) => esc(r.email)).join(', ') || 'no confirmed addresses yet'}.
+      ${s.next_digest ? `Next digest window ends ${fmtDate(s.next_digest.period_end)}.` : ''}
+      ${s.last_digest ? `Last digest ${esc(s.last_digest.period_key)}: ${esc(s.last_digest.status)}${s.last_digest.change_count ? ` (${s.last_digest.change_count} changes)` : ''}.` : ''}
+    </p>
   </div>
   <div class="card" style="margin-top:16px;">
     <h3>Website management</h3>
@@ -460,11 +564,20 @@ async function handleAuthForm(e, mode) {
     const body = mode === 'signup'
       ? { email, password, workspace_name: elid('wsname') ? elid('wsname').value.trim() : undefined }
       : { email, password };
-    await api(`/auth/${mode === 'signup' ? 'signup' : 'signin'}`, { method: 'POST', body });
+    const res = await api(`/auth/${mode === 'signup' ? 'signup' : 'signin'}`, { method: 'POST', body });
+
+    if (mode === 'signup' && res.verification && res.verification.required && !res.user) {
+      renderVerificationSent(email, res.verification);
+      return;
+    }
     await loadMe();
     location.hash = '#/dashboard';
     toast(mode === 'signup' ? 'Account created. Welcome!' : 'Signed in.', 'success');
   } catch (err) {
+    if (err.status === 403 && /confirm your email/i.test(err.message)) {
+      renderVerificationSent(email, { required: true, delivery: 'unknown' });
+      return;
+    }
     errEl.textContent = err.message;
   }
 }
@@ -532,6 +645,304 @@ async function updateReview(id, status) {
   } catch (err) { showError(err); }
 }
 
+
+// ---------------------------------------------------------------------------
+// Change monitoring: pages, changelog, alerts
+// ---------------------------------------------------------------------------
+const CATEGORY_LABELS = {
+  pricing: 'Pricing', signup: 'Signup flow', headings: 'Headings', copy: 'Page copy',
+  sections: 'Sections', links: 'Links', cta: 'Calls to action', images: 'Images',
+  title: 'Title', meta: 'Meta description', other: 'Other'
+};
+
+function relTime(iso) {
+  if (!iso) return '-';
+  const then = new Date(iso).getTime();
+  const diff = Date.now() - then;
+  const mins = Math.round(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return fmtDate(iso);
+}
+
+function severityClass(change) {
+  const sig = change.significance ?? 0;
+  if (sig >= 0.8) return 'status-failed';
+  if (sig >= 0.5) return 'status-running';
+  if (sig >= 0.25) return 'status-queued';
+  return 'status-completed';
+}
+
+async function monitoringView() {
+  const data = await api(`/workspaces/${wsId}/monitoring`);
+  const pages = await api(`/workspaces/${wsId}/pages`);
+  const byPage = {};
+  for (const p of pages.pages) (byPage[p.website_id] = byPage[p.website_id] || []).push(p);
+
+  const frequencies = data.frequencies || [];
+  const siteCards = data.websites.filter((w) => w.kind !== 'original' || w.monitor_enabled).map((w) => {
+    const sitePages = byPage[w.id] || [];
+    return `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="page-head" style="margin-bottom:8px;">
+        <div>
+          <h3 style="margin-bottom:2px;">${esc(w.label || w.submitted_url)}</h3>
+          <div class="small muted">${esc(hostOf(w.submitted_url))} &middot;
+            ${w.monitor_enabled ? `<span class="badge status-completed">monitoring</span> every ${esc(String(w.frequency_hours || '-'))}h` : '<span class="badge">not monitored</span>'}
+            ${w.page_count ? `&middot; ${w.page_count} page(s)` : ''}
+            ${w.changes_7d ? `&middot; ${w.changes_7d} change(s) in 7 days` : ''}
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <select data-freq="${esc(w.id)}" style="width:auto;">
+            ${frequencies.map((f) => `<option value="${f}" ${Number(w.frequency_hours) === f ? 'selected' : ''}>every ${f}h</option>`).join('')}
+          </select>
+          <button class="btn sm ${w.monitor_enabled ? 'secondary' : ''}" data-monitor="${esc(w.id)}" data-enable="${w.monitor_enabled ? '0' : '1'}">
+            ${w.monitor_enabled ? 'Pause monitoring' : 'Start monitoring'}
+          </button>
+        </div>
+      </div>
+      ${w.baseline_status === 'failed' ? `<div class="notice warn">Baseline failed: ${esc(w.baseline_error || 'the page could not be read')}</div>` : ''}
+      ${w.baseline_status === 'created' ? `<p class="small muted">Baseline captured ${fmtDate(w.baseline_at)}. Changes are compared against the last valid snapshot.</p>` : ''}
+      ${sitePages.length === 0
+        ? '<p class="small muted">No pages registered yet. Start monitoring to discover pricing, signup and feature pages automatically.</p>'
+        : `<table><thead><tr><th>Page</th><th>Role</th><th>Status</th><th>Last checked</th><th>Next check</th><th></th></tr></thead><tbody>
+          ${sitePages.map((pg) => `<tr>
+            <td><div class="url-cell" title="${esc(pg.url)}">${esc(pg.url)}</div>${pg.label ? `<div class="small muted">${esc(pg.label)}</div>` : ''}</td>
+            <td><span class="badge">${esc(pg.role)}</span></td>
+            <td><span class="badge ${pg.last_status === 'failed' ? 'status-failed' : pg.last_status === 'changed' ? 'status-running' : 'status-completed'}">${esc(pg.last_status || 'pending')}</span>
+              ${pg.has_baseline ? '' : '<div class="small muted">no baseline</div>'}
+              ${pg.last_error ? `<div class="small" style="color:var(--danger)">${esc(pg.last_error.slice(0, 70))}</div>` : ''}</td>
+            <td class="muted small">${relTime(pg.last_checked_at)}</td>
+            <td class="muted small">${pg.enabled ? relTime(pg.next_check_at) : 'paused'}</td>
+            <td style="text-align:right; white-space:nowrap;">
+              <button class="btn ghost sm" data-check="${esc(pg.id)}">Check now</button>
+              <button class="btn ghost sm" data-page-toggle="${esc(pg.id)}" data-enabled="${pg.enabled ? '0' : '1'}">${pg.enabled ? 'Disable' : 'Enable'}</button>
+            </td></tr>`).join('')}
+        </tbody></table>`}
+      <form data-add-page="${esc(w.id)}" style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+        <input placeholder="https://${esc(hostOf(w.submitted_url))}/changelog" style="flex:1 1 260px;" aria-label="Page URL to add">
+        <select aria-label="Page role" style="width:auto;">
+          ${(pages.roles || []).map((r) => `<option value="${r}">${r}</option>`).join('')}
+        </select>
+        <button class="btn secondary sm" type="submit">Add page</button>
+      </form>
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="page-head">
+    <div><h1>Monitoring</h1><p>Competitor pages are re-fetched on a schedule and compared with their last valid snapshot.</p></div>
+    <button class="btn" id="runChecksBtn">Run due checks now</button>
+  </div>
+  <div class="grid cols-3" style="margin-bottom:16px;">
+    <div class="stat"><div class="lbl">Checks due now</div><div class="num">${data.due_checks}</div><div class="sub">${data.due_checks ? 'The scheduler picks these up on its next tick' : 'Everything is up to date'}</div></div>
+    <div class="stat"><div class="lbl">Monitored websites</div><div class="num">${data.websites.filter((w) => w.monitor_enabled).length}</div></div>
+    <div class="stat"><div class="lbl">Failing pages</div><div class="num">${data.websites.reduce((n, w) => n + (w.failing_pages || 0), 0)}</div><div class="sub">Fetches that did not return readable content</div></div>
+  </div>
+  ${siteCards || emptyState('globe', 'Nothing to monitor yet', 'Add a competitor website first, then start monitoring it.')}`;
+}
+
+async function changesView() {
+  const q = new URLSearchParams(location.hash.split('?')[1] || '');
+  const limit = 25;
+  const offset = Number(q.get('offset')) || 0;
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  const sites = await api(`/workspaces/${wsId}/websites`);
+  for (const key of ['website_id', 'category', 'status']) {
+    if (q.get(key)) params.set(key, q.get(key));
+  }
+  const data = await api(`/workspaces/${wsId}/changes?${params.toString()}`);
+
+  const rows = data.changes.map((c) => `
+    <tr class="clickable" data-change="${esc(c.id)}">
+      <td><div class="small"><strong>${esc(c.website_label || hostOf(c.website_url))}</strong></div>
+          <div class="url-cell small muted" title="${esc(c.page_url)}">${esc(c.page_url)}</div></td>
+      <td><span class="badge ${severityClass(c)}">${esc(CATEGORY_LABELS[c.category] || c.category)}</span></td>
+      <td class="small">${esc(c.summary)}</td>
+      <td><span class="badge ${c.status === 'open' ? 'status-running' : 'status-completed'}">${esc(c.status)}</span></td>
+      <td class="muted small" title="${esc(fmtDate(c.detected_at))}">${relTime(c.detected_at)}</td>
+    </tr>`).join('');
+
+  const pageLink = (nextOffset) => {
+    const p = new URLSearchParams(q.toString());
+    p.set('offset', String(nextOffset));
+    return '#/changes?' + p.toString();
+  };
+
+  return `
+  <div class="page-head">
+    <div><h1>Changelog</h1><p>Every detected difference, with both snapshots kept.</p></div>
+    <a class="btn secondary" href="#/monitoring">Monitoring settings</a>
+  </div>
+  <div class="card" style="margin-bottom:16px;">
+    <div class="grid cols-4">
+      <div class="field"><label for="cf_site">Website</label>
+        <select id="cf_site"><option value="">All</option>
+          ${sites.websites.filter((w) => w.kind !== 'original').map((w) => `<option value="${esc(w.id)}" ${q.get('website_id') === w.id ? 'selected' : ''}>${esc(w.label || hostOf(w.url))}</option>`).join('')}
+        </select></div>
+      <div class="field"><label for="cf_cat">Category</label>
+        <select id="cf_cat"><option value="">All</option>
+          ${Object.entries(CATEGORY_LABELS).map(([k, v]) => `<option value="${k}" ${q.get('category') === k ? 'selected' : ''}>${v}</option>`).join('')}
+        </select></div>
+      <div class="field"><label for="cf_status">Review state</label>
+        <select id="cf_status"><option value="">All</option>
+          ${['open', 'acknowledged', 'dismissed'].map((v) => `<option value="${v}" ${q.get('status') === v ? 'selected' : ''}>${v}</option>`).join('')}
+        </select></div>
+      <div class="field"><label>&nbsp;</label>
+        <div style="display:flex; gap:8px;">
+          <button class="btn sm" id="cfApply">Apply</button>
+          <a class="btn ghost sm" href="#/changes">Clear</a>
+        </div></div>
+    </div>
+  </div>
+  ${data.changes.length === 0 ? emptyState('doc', 'No changes recorded yet',
+      'Once a monitored page differs from its last valid snapshot, the difference is recorded here with both versions.')
+    : `<div class="card" style="padding:0; overflow-x:auto;">
+      <table><thead><tr><th>Competitor / page</th><th>Category</th><th>What changed</th><th>State</th><th>Detected</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    </div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px;">
+      <span class="small muted">Showing ${offset + 1}-${offset + data.changes.length} of ${data.total}</span>
+      <span style="display:flex; gap:8px;">
+        ${offset > 0 ? `<a class="btn ghost sm" href="${pageLink(Math.max(0, offset - limit))}">Previous</a>` : ''}
+        ${data.has_more ? `<a class="btn secondary sm" href="${pageLink(offset + limit)}">Next</a>` : ''}
+      </span>
+    </div>`}`;
+}
+
+function evidenceBlock(detail) {
+  const change = detail.change;
+  const ev = change.evidence || {};
+  if (ev.kind === 'pricing') {
+    const row = (p, cls) => `<tr class="${cls}"><td>${esc(p.name || 'unnamed plan')}</td>
+      <td class="num">${p.amount === null || p.amount === undefined ? '-' : esc(String(p.amount))}</td>
+      <td>${esc(p.currency || '')}</td><td>${esc(p.interval || '-')}</td>
+      <td class="small">${esc((p.limits || []).join('; ') || '-')}</td>
+      <td><span class="badge">${esc(p.confidence || 'n/a')}</span></td></tr>`;
+    const changed = (ev.changed || []).map((c) => `<tr><td>${esc(c.previous.name || '-')}</td>
+      <td class="num">${esc(String(c.previous.amount))} &rarr; ${esc(String(c.current.amount))}</td>
+      <td>${esc(c.current.currency || '')}</td><td>${esc(c.current.interval || '-')}</td>
+      <td class="small">${esc((c.current.limits || []).join('; ') || '-')}</td><td><span class="badge status-running">changed</span></td></tr>`).join('');
+    return `<h4>Plan comparison</h4>
+      <table><thead><tr><th>Plan</th><th>Price</th><th>Currency</th><th>Interval</th><th>Limits</th><th>Confidence</th></tr></thead>
+      <tbody>${changed}${(ev.added || []).map((p) => row(p, '')).join('')}${(ev.removed || []).map((p) => row(p, 'dim')).join('')}</tbody></table>
+      <p class="small muted" style="margin-top:8px;">${esc(ev.note || '')}</p>`;
+  }
+  if (ev.kind === 'forms') {
+    return `<h4>Form fields</h4>
+      ${(ev.addedFields || []).length ? `<p class="small">Added: ${ev.addedFields.map((f) => `<code>${esc(f)}</code>`).join(', ')}</p>` : ''}
+      ${(ev.removedFields || []).length ? `<p class="small">Removed: ${ev.removedFields.map((f) => `<code>${esc(f)}</code>`).join(', ')}</p>` : ''}
+      ${!(ev.addedFields || []).length && !(ev.removedFields || []).length ? '<p class="small muted">The form target or submit label changed.</p>' : ''}`;
+  }
+  if (ev.kind === 'text') {
+    const list = (items, cls, label) => (items && items.length)
+      ? `<h4>${label}</h4><ul class="evidence-list ${cls}">${items.slice(0, 20).map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : '';
+    return `${list(ev.addedSentences, 'added', 'Added')}${list(ev.removedSentences, 'removed', 'Removed')}
+      ${ev.note ? `<p class="small muted">${esc(ev.note)}</p>` : ''}`;
+  }
+  if (ev.kind === 'items') {
+    const list = (items, cls, label, fmt) => (items && items.length)
+      ? `<h4>${label}</h4><ul class="evidence-list ${cls}">${items.slice(0, 15).map((i) => `<li>${esc(fmt(i))}</li>`).join('')}</ul>` : '';
+    const fmt = (i) => (typeof i === 'string' ? i : i.text || i.href || i.src || i.heading || JSON.stringify(i));
+    return `${list(ev.added, 'added', 'Added', fmt)}${list(ev.removed, 'removed', 'Removed', fmt)}`;
+  }
+  return '';
+}
+
+async function changeDetailView(id) {
+  const detail = await api(`/workspaces/${wsId}/changes/${encodeURIComponent(id)}`);
+  const c = detail.change;
+  const snapCard = (snap, label) => snap ? `
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:baseline;">
+        <h3>${label}</h3>
+        <span class="small muted">${fmtDate(snap.fetched_at)}</span>
+      </div>
+      <p class="small muted" style="margin:0 0 8px;">${esc(snap.final_url)} &middot; HTTP ${esc(String(snap.http_status))} &middot; ${esc(String(snap.word_count))} words &middot; capture: ${esc(snap.capture_status)}</p>
+      ${snap.redirect_chain && snap.redirect_chain.length ? `<p class="small muted">Redirects: ${snap.redirect_chain.map((r) => esc(r)).join(' &rarr; ')}</p>` : ''}
+      <details><summary class="small">Prices found on this snapshot (${(snap.pricing || []).length})</summary>
+        ${(snap.pricing || []).length ? `<table><thead><tr><th>Plan</th><th>Price</th><th>Interval</th><th>Confidence</th></tr></thead><tbody>
+          ${snap.pricing.map((p) => `<tr><td>${esc(p.name || '-')}</td><td class="num">${esc(String(p.amount))}</td><td>${esc(p.interval || '-')}</td><td>${esc(p.confidence)}</td></tr>`).join('')}
+        </tbody></table>` : '<p class="small muted">No structured prices could be read from this snapshot.</p>'}
+      </details>
+    </div>` : '';
+
+  return `
+  <div class="page-head">
+    <div>
+      <p class="small muted" style="margin:0;"><a href="#/changes">&larr; Changelog</a></p>
+      <h1 style="margin-top:6px;">${esc(CATEGORY_LABELS[c.category] || c.category)} change</h1>
+      <p>${esc(c.website_label || hostOf(c.website_url))} &middot; ${esc(c.page_url)}</p>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <select id="changeStatus" data-id="${esc(c.id)}" style="width:auto;">
+        ${['open', 'acknowledged', 'dismissed'].map((v) => `<option value="${v}" ${c.status === v ? 'selected' : ''}>${v}</option>`).join('')}
+      </select>
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:16px;">
+    <p style="margin:0 0 10px; font-size:15px;">${esc(c.summary)}</p>
+    <div class="small muted">
+      Detected ${fmtDate(c.detected_at)} &middot; significance ${Math.round((c.significance || 0) * 100)}% (${esc(c.significance_label || '')}) &middot;
+      confidence ${esc(c.confidence || 'n/a')}
+    </div>
+    <p class="small muted" style="margin-top:10px;">Evidence comes from two saved snapshots of a public page. This is an observed difference, not a legal conclusion.</p>
+  </div>
+  <div class="card" style="margin-bottom:16px;">
+    ${evidenceBlock(detail) || '<p class="small muted">No structured evidence is attached to this entry.</p>'}
+  </div>
+  <div class="grid cols-2">
+    ${snapCard(detail.previousSnapshot, 'Before')}
+    ${snapCard(detail.currentSnapshot, 'After')}
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <h3>Text comparison</h3>
+    <div class="grid cols-2">
+      <div><h4 class="small muted">Before (${(c.previous_value || '').length} chars)</h4>
+        <pre class="snapshot-text">${esc(normaliseForDisplay(detail.previousText || c.previous_value || 'No text stored.'))}</pre></div>
+      <div><h4 class="small muted">After (${(c.current_value || '').length} chars)</h4>
+        <pre class="snapshot-text">${esc(normaliseForDisplay(detail.currentText || c.current_value || 'No text stored.'))}</pre></div>
+    </div>
+  </div>`;
+}
+
+function normaliseForDisplay(text) {
+  const s = String(text || '');
+  return s.length > 6000 ? s.slice(0, 6000) + '\n… (truncated for display)' : s;
+}
+
+async function alertsView() {
+  const data = await api(`/workspaces/${wsId}/alerts?limit=50`);
+  const rows = data.alerts.map((a) => `
+    <tr>
+      <td><span class="badge ${a.severity === 'critical' ? 'status-failed' : a.severity === 'high' ? 'status-running' : 'status-queued'}">${esc(a.severity)}</span></td>
+      <td><div class="small"><strong>${esc(a.title)}</strong></div>
+          ${a.summary ? `<div class="small muted">${esc(a.summary.slice(0, 160))}</div>` : ''}
+          ${a.change_id ? `<a class="small" href="#/changes/${esc(a.change_id)}">Open changelog entry</a>` : ''}</td>
+      <td class="muted small">${relTime(a.created_at)}</td>
+      <td style="text-align:right; white-space:nowrap;">
+        ${a.status === 'unread' ? `<button class="btn ghost sm" data-alert-read="${esc(a.id)}">Mark read</button>` : `<span class="badge status-completed">${esc(a.status)}</span>`}
+        ${a.status !== 'dismissed' ? `<button class="btn ghost sm" data-alert-dismiss="${esc(a.id)}">Dismiss</button>` : ''}
+      </td>
+    </tr>`).join('');
+
+  return `
+  <div class="page-head">
+    <div><h1>Alerts</h1><p>High-signal changes, each linked to the evidence that produced it.</p></div>
+    <button class="btn secondary" id="readAllBtn">Mark all read</button>
+  </div>
+  ${data.total === 0 ? emptyState('bolt', 'No alerts yet',
+      'Alerts appear when a monitored page changes meaningfully. Dismissing one keeps it out of emails and the digest.')
+    : `<div class="card" style="padding:0; overflow-x:auto;">
+      <table><thead><tr><th>Severity</th><th>Alert</th><th>When</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+    </div>`}`;
+}
+
 // ---------------------------------------------------------------------------
 // boot / router
 // ---------------------------------------------------------------------------
@@ -562,7 +973,20 @@ async function render() {
   bindShell();
 
   try {
-    if (hash.startsWith('#/results/')) {
+    if (hash.startsWith('#/verify-failed')) {
+      const reason = new URLSearchParams(hash.split('?')[1] || '').get('reason') || 'invalid';
+      root.innerHTML = verifyFailedView(reason);
+      return;
+    }
+    if (hash.startsWith('#/changes/')) {
+      content = await changeDetailView(decodeURIComponent(hash.slice('#/changes/'.length).split('?')[0]));
+    } else if (hash.startsWith('#/changes')) {
+      content = await changesView();
+    } else if (hash.startsWith('#/alerts')) {
+      content = await alertsView();
+    } else if (hash.startsWith('#/monitoring')) {
+      content = await monitoringView();
+    } else if (hash.startsWith('#/results/')) {
       content = await resultDetailView(decodeURIComponent(hash.slice('#/results/'.length)));
     } else if (hash.startsWith('#/results')) {
       content = await resultsView();
@@ -685,6 +1109,172 @@ function bindPage(hash) {
       render();
     } catch (err) { elid('memberError').textContent = err.message; }
   });
+  // ---- change monitoring ----
+  const runChecks = elid('runChecksBtn');
+  if (runChecks) runChecks.addEventListener('click', async () => {
+    runChecks.disabled = true;
+    runChecks.textContent = 'Running checks...';
+    try {
+      const { result } = await api(`/workspaces/${wsId}/monitoring/run`, { method: 'POST' });
+      const m = result.monitor || {};
+      toast(result.skipped
+        ? `Another tick is already running (${result.reason}).`
+        : `Checked ${m.checked || 0} page(s): ${m.changed || 0} changed, ${m.baselines || 0} new baselines, ${m.failed || 0} failed.`,
+        result.skipped ? '' : 'success');
+      render();
+    } catch (err) {
+      toast(err.message, 'error');
+      runChecks.disabled = false;
+      runChecks.textContent = 'Run due checks now';
+    }
+  });
+
+  document.querySelectorAll('[data-monitor]').forEach((b) => b.addEventListener('click', async () => {
+    const enable = b.dataset.enable === '1';
+    const freqSel = document.querySelector(`[data-freq="${b.dataset.monitor}"]`);
+    b.disabled = true;
+    try {
+      const body = enable
+        ? { enabled: true, frequency_hours: Number(freqSel && freqSel.value) || undefined }
+        : { enabled: false };
+      const res = await api(`/workspaces/${wsId}/websites/${b.dataset.monitor}/monitor`, { method: 'POST', body });
+      if (res.homepage_fetch_error) {
+        toast(`Monitoring enabled, but the homepage could not be fetched: ${res.homepage_fetch_error}`, 'error');
+      } else {
+        toast(enable ? `Monitoring on: ${res.pages.length} page(s) registered.` : 'Monitoring paused.', 'success');
+      }
+      render();
+    } catch (err) {
+      toast(err.message, 'error');
+      b.disabled = false;
+    }
+  }));
+
+  document.querySelectorAll('[data-check]').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    b.textContent = 'Checking...';
+    try {
+      const { result } = await api(`/workspaces/${wsId}/pages/${b.dataset.check}/check`, { method: 'POST' });
+      const map = {
+        baseline_created: 'Baseline created. Future checks compare against it.',
+        unchanged: 'No change since the last snapshot.',
+        changed: `${result.changes.length} change(s) recorded.`,
+        failed: `Check failed: ${result.error}`
+      };
+      toast(map[result.status] || result.status, result.status === 'failed' ? 'error' : 'success');
+      render();
+    } catch (err) {
+      toast(err.message, 'error');
+      b.disabled = false;
+      b.textContent = 'Check now';
+    }
+  }));
+
+  document.querySelectorAll('[data-page-toggle]').forEach((b) => b.addEventListener('click', async () => {
+    try {
+      await api(`/workspaces/${wsId}/pages/${b.dataset.pageToggle}`, { method: 'PATCH', body: { enabled: b.dataset.enabled === '1' } });
+      render();
+    } catch (err) { showError(err); }
+  }));
+
+  document.querySelectorAll('[data-add-page]').forEach((form) => form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = form.querySelector('input');
+    const role = form.querySelector('select').value;
+    if (!input.value.trim()) return;
+    try {
+      await api(`/workspaces/${wsId}/websites/${form.dataset.addPage}/pages`, { method: 'POST', body: { url: input.value.trim(), role } });
+      toast('Page added. It gets a baseline on the next check.', 'success');
+      render();
+    } catch (err) { toast(err.message, 'error'); }
+  }));
+
+  document.querySelectorAll('[data-change]').forEach((tr) => tr.addEventListener('click', () => {
+    location.hash = '#/changes/' + tr.dataset.change;
+  }));
+  const cfApply = elid('cfApply');
+  if (cfApply) cfApply.addEventListener('click', () => {
+    const p = new URLSearchParams();
+    if (elid('cf_site').value) p.set('website_id', elid('cf_site').value);
+    if (elid('cf_cat').value) p.set('category', elid('cf_cat').value);
+    if (elid('cf_status').value) p.set('status', elid('cf_status').value);
+    location.hash = '#/changes' + (p.toString() ? '?' + p.toString() : '');
+  });
+  const changeStatus = elid('changeStatus');
+  if (changeStatus) changeStatus.addEventListener('change', async () => {
+    try {
+      await api(`/workspaces/${wsId}/changes/${changeStatus.dataset.id}`, { method: 'PATCH', body: { status: changeStatus.value } });
+      toast('Review state updated.', 'success');
+    } catch (err) { showError(err); }
+  });
+
+  // ---- alerts ----
+  document.querySelectorAll('[data-alert-read]').forEach((b) => b.addEventListener('click', async () => {
+    try {
+      await api(`/workspaces/${wsId}/alerts/${b.dataset.alertRead}`, { method: 'PATCH', body: { status: 'read' } });
+      render();
+    } catch (err) { showError(err); }
+  }));
+  document.querySelectorAll('[data-alert-dismiss]').forEach((b) => b.addEventListener('click', async () => {
+    try {
+      await api(`/workspaces/${wsId}/alerts/${b.dataset.alertDismiss}`, { method: 'PATCH', body: { status: 'dismissed' } });
+      toast('Alert dismissed. The change stays in the changelog.');
+      render();
+    } catch (err) { showError(err); }
+  }));
+  const readAll = elid('readAllBtn');
+  if (readAll) readAll.addEventListener('click', async () => {
+    try {
+      const r = await api(`/workspaces/${wsId}/alerts/read-all`, { method: 'POST' });
+      toast(`${r.updated} alert(s) marked read.`, 'success');
+      render();
+    } catch (err) { showError(err); }
+  });
+
+  // ---- notification preferences ----
+  const notifForm = elid('notifForm');
+  if (notifForm) notifForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = elid('notifError');
+    errEl.textContent = '';
+    try {
+      await api(`/workspaces/${wsId}/notifications`, {
+        method: 'PATCH',
+        body: {
+          immediate_email: elid('notifImmediate').checked,
+          digest_enabled: elid('notifDigest').checked,
+          digest_day: Number(elid('notifDay').value),
+          digest_hour_utc: Number(elid('notifHour').value),
+          min_severity: elid('notifSeverity').value,
+          include_empty_digest: elid('notifEmpty').checked
+        }
+      });
+      toast('Notification preferences saved.', 'success');
+      render();
+    } catch (err) { errEl.textContent = err.message; }
+  });
+  const testEmail = elid('testEmailBtn');
+  if (testEmail) testEmail.addEventListener('click', async () => {
+    testEmail.disabled = true;
+    try {
+      const r = await api(`/workspaces/${wsId}/notifications/test`, { method: 'POST' });
+      toast(`Test email ${r.status} via ${r.provider}.`, 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      testEmail.disabled = false;
+    }
+  });
+  const resendVerify = elid('resendVerifyBtn');
+  if (resendVerify) resendVerify.addEventListener('click', async () => {
+    try {
+      const r = await api('/auth/verify/resend', { method: 'POST', body: { email: me.user.email } });
+      toast(r.verification && r.verification.delivery === 'skipped'
+        ? 'No email provider configured, so nothing was sent.'
+        : 'Confirmation email sent.', r.verification && r.verification.delivery === 'skipped' ? 'error' : 'success');
+    } catch (err) { toast(err.message, 'error'); }
+  });
+
   const so2 = elid('signoutBtn2');
   if (so2) so2.addEventListener('click', async () => {
     await api('/auth/signout', { method: 'POST' });
@@ -695,4 +1285,21 @@ function bindPage(hash) {
 }
 
 window.addEventListener('hashchange', render);
+
+// A verification link redirects to /app#/dashboard?verified=1
+if (/[?&]verified=1/.test(location.hash)) {
+  setTimeout(() => toast('Email confirmed. Your workspace is active.', 'success'), 400);
+}
+if (/[?&]oauth_error=/.test(location.hash)) {
+  const reason = new URLSearchParams(location.hash.split('?')[1]).get('oauth_error');
+  setTimeout(() => toast(`Google sign-in failed: ${String(reason).replace(/_/g, ' ')}`, 'error'), 400);
+}
+
+// Service worker (offline shell is optional; failure is harmless).
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => { /* offline shell optional */ });
+  });
+}
+
 render();

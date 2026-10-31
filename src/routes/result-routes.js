@@ -14,11 +14,13 @@ router.get('/workspaces/:workspaceId/results', requireWorkspace(), (req, res) =>
   const args = [req.workspace.id];
 
   if (q.website_id) {
-    const site = db.prepare('SELECT normalized_domain FROM websites WHERE id=? AND workspace_id=?').get(q.website_id, req.workspace.id);
+    // Exact page ownership instead of a domain substring: a LIKE on the domain
+    // also matched look-alike domains (example.com matched notexample.com).
+    const site = db.prepare('SELECT id FROM websites WHERE id=? AND workspace_id=?').get(q.website_id, req.workspace.id);
     if (!site) return res.status(400).json({ error: 'Unknown website filter.' });
-    sql += ` AND (r.original_url LIKE ? ESCAPE '\\' OR r.comparison_url LIKE ? ESCAPE '\\')`;
-    const like = `%${dbLike(site.normalized_domain)}%`;
-    args.push(like, like);
+    sql += ` AND (r.original_page_id IN (SELECT id FROM pages WHERE website_id=?)
+                OR r.comparison_page_id IN (SELECT id FROM pages WHERE website_id=?))`;
+    args.push(site.id, site.id);
   }
   if (q.status && ['new', 'in_review', 'confirmed', 'dismissed'].includes(q.status)) {
     sql += ' AND r.status = ?';
@@ -39,11 +41,20 @@ router.get('/workspaces/:workspaceId/results', requireWorkspace(), (req, res) =>
     const d = new Date(q.since);
     if (!Number.isNaN(d.getTime())) { sql += ' AND r.last_observed_at >= ?'; args.push(d.toISOString()); }
   }
+  const countSql = sql.replace('SELECT r.* FROM results r', 'SELECT COUNT(*) c FROM results r');
+  const total = db.prepare(countSql).get(...args).c;
+
   sql += ' ORDER BY r.jaccard_score DESC, r.last_observed_at DESC LIMIT ? OFFSET ?';
-  args.push(Math.min(Number(q.limit) || 100, 200), Math.max(Number(q.offset) || 0, 0));
+  const limit = Math.min(Number(q.limit) || 100, 200);
+  const offset = Math.max(Number(q.offset) || 0, 0);
+  args.push(limit, offset);
 
   const rows = db.prepare(sql).all(...args);
   res.json({
+    total,
+    has_more: offset + rows.length < total,
+    limit,
+    offset,
     results: rows.map((r) => ({
       id: r.id,
       scan_id: r.scan_id,
@@ -52,6 +63,8 @@ router.get('/workspaces/:workspaceId/results', requireWorkspace(), (req, res) =>
       match_type: r.match_type,
       jaccard_score: r.jaccard_score,
       cosine_score: r.cosine_score,
+      structural_score: r.structural_score,
+      verdict: safeJson(r.signals, {}).verdict || null,
       status: r.status,
       first_observed_at: r.first_observed_at,
       last_observed_at: r.last_observed_at
@@ -83,6 +96,11 @@ router.get('/workspaces/:workspaceId/results/:id', requireWorkspace(), (req, res
         comparison_excerpt: evidence.comparison_excerpt
       } : null,
       review_history: history,
+      signals: safeJson(r.signals, {}),
+      limitations: safeJson(r.limitations, []),
+      structural_score: r.structural_score,
+      verdict_explanation: safeJson(r.signals, {}).verdict_explanation ||
+        'Scores measure observed overlap between two fetched public pages; they are not a legal conclusion.',
       scoring_method: 'Deterministic comparison: word-shingle Jaccard (k=5) + TF-IDF cosine over scan corpus + longest common word passages. Scores measure textual overlap only, not probability of infringement.'
     }
   });
@@ -105,8 +123,13 @@ router.patch('/workspaces/:workspaceId/results/:id', requireWorkspace(), (req, r
   res.json({ result: { id: r.id, status } });
 });
 
-function dbLike(s) {
-  return String(s).replace(/[\\%_]/g, (m) => '\\' + m);
+function safeJson(value, fallback) {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed === null || parsed === undefined ? fallback : parsed;
+  } catch {
+    return fallback;
+  }
 }
 
 module.exports = router;
