@@ -236,3 +236,26 @@ To email real users: verify a domain at resend.com/domains, then set
 
 Relevant variables: `EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, `EMAIL_FROM`,
 `RESEND_WEBHOOK_SECRET`, `PUBLIC_BASE_URL` (verification links are built from it).
+
+## Zero-cost mode (no domain, no email provider, no search API)
+
+The product runs with none of the optional services. Auto-discovery and email
+verification switch themselves off instead of blocking anyone.
+
+| Capability | Cost | Required for the core product? | Behaviour when missing |
+|---|---|---|---|
+| Register websites, crawl, compare, report | free | yes | always on |
+| Monitoring + changelog | free | no | on; pages found from nav links and sitemap.xml, no API key |
+| Auto-discovery of copiers (Serper) | free tier + API key | no | the run fails with a message naming the missing key; add sites by URL instead |
+| Email verification (Resend) | free tier, needs a verified domain for real recipients | no | auth_mode=instant: signup works, accounts are stored verified with source instant_mode |
+| Google sign-in | free | no | button hidden; /auth/config lists the missing variables |
+
+Auth mode is derived from what the deployment can actually deliver: no provider, or
+Resend's test sender, means verification is off. An explicit
+AUTH_REQUIRE_EMAIL_VERIFICATION=true|false always wins. Accounts created in instant
+mode are stored as verified, so switching verification on later does not lock
+existing users out.
+
+Sitemap discovery reads /robots.txt for Sitemap: directives (falling back to
+/sitemap.xml), follows up to 8 sitemap files and caps at 500 URLs, all through the
+existing SSRF-guarded fetcher. Set MONITOR_USE_SITEMAP=false to disable it.

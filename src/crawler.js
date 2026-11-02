@@ -91,7 +91,7 @@ async function robotsAllows(urlObj) {
 }
 
 // Fetch a single URL with manual redirect revalidation and response caps.
-async function fetchPage(rawUrl) {
+async function fetchPage(rawUrl, opts = {}) {
   let current = rawUrl;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const u = await assertSafeUrl(current);   // validates + DNS-checks every hop
@@ -142,7 +142,11 @@ async function fetchPage(rawUrl) {
     }
 
     const ctype = res.headers.get('content-type') || '';
-    if (!ALLOWED_CONTENT_TYPES.test(ctype)) {
+    // Callers that legitimately need non-HTML documents (sitemaps) pass opts.accept.
+    const extraTypes = (opts && Array.isArray(opts.accept)) ? opts.accept : [];
+    const typeAllowed = ALLOWED_CONTENT_TYPES.test(ctype) ||
+      extraTypes.some((t) => ctype.toLowerCase().includes(String(t).toLowerCase()));
+    if (!typeAllowed) {
       const err = new Error(`unsupported content-type "${ctype || 'none'}"`);
       err.code = 'UNSUPPORTED_TYPE';
       throw err;

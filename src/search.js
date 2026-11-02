@@ -75,4 +75,18 @@ async function searchWeb(query, { num = 10 } = {}) {
   return urls;
 }
 
-module.exports = { searchWeb, isSearchConfigured: () => Boolean(getSerperKey()), SearchUnavailableError };
+// Search is an OPTIONAL capability: it powers auto-discovery of sites that may
+// have copied yours. Registering and comparing websites never needs it.
+function describe() {
+  const available = Boolean(getSerperKey());
+  return {
+    available,
+    provider: available ? 'serper' : null,
+    optional: true,
+    detail: available
+      ? 'Auto-discovery uses Serper to search the web for your wording.'
+      : 'Auto-discovery is off: no search key is configured. Everything else works - add comparison sites by URL.'
+  };
+}
+
+module.exports = { searchWeb, describe, isSearchConfigured: () => Boolean(getSerperKey()), SearchUnavailableError };

@@ -144,6 +144,12 @@ async function sendVerificationEmail(details) {
 router.get('/config', (req, res) => {
   res.json({
     email_verification_required: config.auth.requireEmailVerification,
+    auth_mode: config.auth.mode,                     // 'verified' | 'instant'
+    auth_mode_source: config.auth.modeSource,        // 'derived' | 'AUTH_REQUIRE_EMAIL_VERIFICATION'
+    email_reachable: config.auth.emailReachable,     // can this deploy email arbitrary users?
+    auth_mode_note: config.auth.mode === 'instant'
+      ? 'Email verification is off on this deployment: new accounts are active immediately because this deployment cannot deliver verification email to arbitrary users.'
+      : undefined,
     verification_ttl_hours: config.auth.verificationTtlHours,
     email: email.describeConfig(),
     google: {
@@ -198,8 +204,13 @@ router.post('/signup', authLimiter, express.json({ limit: '16kb' }), async (req,
 
   try {
     db.exec('BEGIN');
-    db.prepare('INSERT INTO users (id, email, password_hash, name, created_at, email_verified_at, email_verified_source) VALUES (?,?,?,?,?,NULL,NULL)')
-      .run(userId, normEmail, passwordHash, null, now);
+    // In instant mode the account is usable immediately, so record it as verified
+    // with an auditable source. Otherwise switching verification on later would lock
+    // out every account created while email was unavailable.
+    const instantVerifiedAt = config.auth.requireEmailVerification ? null : now;
+    const instantSource = config.auth.requireEmailVerification ? null : 'instant_mode';
+    db.prepare('INSERT INTO users (id, email, password_hash, name, created_at, email_verified_at, email_verified_source) VALUES (?,?,?,?,?,?,?)')
+      .run(userId, normEmail, passwordHash, null, now, instantVerifiedAt, instantSource);
     db.prepare('INSERT INTO workspaces (id, name, created_at) VALUES (?,?,?)').run(wsId, wsName, now);
     db.prepare('INSERT INTO memberships (workspace_id, user_id, role, created_at) VALUES (?,?,?,?)')
       .run(wsId, userId, 'owner', now);

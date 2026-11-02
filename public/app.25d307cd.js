@@ -13,6 +13,21 @@ function esc(s) {
 }
 function elid(id) { return document.getElementById(id); }
 
+let AUTH_CFG = null;
+async function loadAuthCfg() {
+  if (AUTH_CFG) return AUTH_CFG;
+  try { AUTH_CFG = await api('/auth/config'); } catch { AUTH_CFG = {}; }
+  return AUTH_CFG;
+}
+function authModeNote() {
+  const c = AUTH_CFG || {};
+  if (!c.auth_mode) return '';
+  if (c.auth_mode === 'instant') {
+    return '<div class="notice" style="margin-bottom:14px;">This deployment runs <strong>without email verification</strong>: your account is active immediately. That is deliberate - it cannot deliver confirmation email to arbitrary addresses yet.</div>';
+  }
+  return '<div class="notice" style="margin-bottom:14px;">Email verification is on: we email a confirmation link before your first sign-in.</div>';
+}
+
 async function api(path, opts = {}) {
   const res = await fetch('/api' + path, {
     headers: { 'content-type': 'application/json' },
@@ -128,6 +143,7 @@ function authView(mode = 'signin') {
       <div class="auth-brand"><a class="logo" href="/">${LOGO_LOCKUP}</a></div>
       <div class="card">
         <h2>${isSignup ? 'Create your account' : 'Welcome back'}</h2>
+        ${authModeNote()}
         <p class="subhead">${isSignup ? 'A workspace is created automatically.' : 'Sign in to your workspace.'}</p>
         <form id="authForm" novalidate>
           <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" required></div>
@@ -302,7 +318,7 @@ async function newScanView() {
   <div class="card">
     <h3 style="margin:0 0 6px;">Auto-discover copies</h3>
     <p class="small muted" style="margin:0 0 14px;">We pick distinctive sentences from your original site, search the web for them, and scan every site that shows up. No comparison site needed.</p>
-    ${searchAvailable ? '' : '<div class="form-error" style="margin-bottom:10px;">Search API key not configured. Add SERPER_API_KEY in Render &rarr; Environment (free key: serper.dev). Manual scans work without it.</div>'}
+    ${searchAvailable ? '' : '<div class="form-error" style="margin-bottom:10px;">Auto-discovery is optional and currently off (no search key). You can still add comparison sites by URL, and monitoring works normally.</div>'}
     <form id="discoverForm" novalidate>
       <div class="field"><label for="discSel">Original website</label>
         <select id="discSel">${originals.map((w) => `<option value="${esc(w.id)}">${esc(w.url)}</option>`).join('')}</select></div>
@@ -1018,6 +1034,7 @@ async function render() {
   const hash = location.hash || '#/';
   const authed = me || (await loadMe());
   if (!authed) {
+    await loadAuthCfg();   // the sign-in screen states whether verification is on
     root.innerHTML = authView(hash.startsWith('#/signup') ? 'signup' : 'signin');
     elid('authForm').addEventListener('submit', (e) => handleAuthForm(e, hash.startsWith('#/signup') ? 'signup' : 'signin'));
     return;

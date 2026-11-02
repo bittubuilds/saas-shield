@@ -23,6 +23,7 @@ const normalize = require('./normalize');
 const diffUtil = require('./diff');
 const { newId, utcNow, sha256 } = require('./util');
 const { extractLinks } = require('./extract');
+const sitemapDiscovery = require('./sitemap');
 
 const PAGE_ROLES = ['homepage', 'pricing', 'signup', 'features', 'docs', 'blog', 'changelog', 'other'];
 
@@ -187,6 +188,27 @@ async function enableMonitoring({ workspaceId, websiteId, frequencyHours, roles,
     }
   }
 
+  // Sitemap discovery: free, no search API. Catches pages a JS-only nav or a
+  // link-less landing page would hide. A missing sitemap is normal, never fatal.
+  let sitemapInfo = null;
+  if (html && config.monitor.useSitemap) {
+    try {
+      const found = await sitemapDiscovery.discoverFromSitemaps(finalUrl);
+      let fromSitemap = 0;
+      for (const url of found.urls) {
+        const role = guessRole(url);
+        if (role === 'other' || role === 'docs' || role === 'blog') continue;
+        if (!wanted.has(role)) continue;
+        if (candidates.some((c) => c.url === normalizedPageUrl(url, finalUrl))) continue;
+        candidates.push({ url: normalizedPageUrl(url, finalUrl), role });
+        fromSitemap += 1;
+      }
+      sitemapInfo = { used: true, files: found.sitemaps.length, urls: found.urls.length, candidates: fromSitemap, error: found.error };
+    } catch (e) {
+      sitemapInfo = { used: true, files: 0, urls: 0, candidates: 0, error: e.message };
+    }
+  }
+
   const added = [];
   for (const candidate of candidates.slice(0, config.monitor.maxPagesPerWebsite)) {
     const res = addMonitoredPage({
@@ -208,6 +230,7 @@ async function enableMonitoring({ workspaceId, websiteId, frequencyHours, roles,
     pages: added,
     discovered: candidates.length,
     homepageFetchError: fetchError,
+    sitemap: sitemapInfo,
     note: added.length === 0
       ? 'No pages could be registered. Check that the site is reachable and public.'
       : undefined

@@ -108,6 +108,7 @@ const config = {
     // Supported scan frequencies, in hours. Anything else is rejected.
     frequencies: [1, 6, 12, 24, 72, 168],
     defaultFrequencyHours: num(env.MONITOR_DEFAULT_FREQUENCY_HOURS, 24),
+    useSitemap: bool(env.MONITOR_USE_SITEMAP, true),
     maxPagesPerWebsite: num(env.MONITOR_MAX_PAGES_PER_SITE, 12),
     // Bounded work per scheduler tick so one tick can never run away.
     maxChecksPerTick: num(env.MONITOR_MAX_CHECKS_PER_TICK, 6),
@@ -159,5 +160,7 @@ if (!config.monitor.frequencies.includes(config.monitor.defaultFrequencyHours)) 
   config.monitor.frequencies.push(config.monitor.defaultFrequencyHours);
   config.monitor.frequencies.sort((a, b) => a - b);
 }
+
+require('./authmode').apply(config);
 
 module.exports = config;

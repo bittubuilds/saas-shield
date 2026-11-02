@@ -65,6 +65,7 @@ router.post('/workspaces/:workspaceId/websites/:id/monitor', requireWorkspace(),
       discovered: result.discovered,
       pages: result.pages.map(serializePage),
       homepage_fetch_error: result.homepageFetchError || null,
+      sitemap: result.sitemap || null,
       note: result.note
     });
   } catch (e) {
