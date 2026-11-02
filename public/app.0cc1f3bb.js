@@ -367,7 +367,7 @@ async function resultsView() {
       ${results.map((r) => `<tr class="clickable" data-result="${esc(r.id)}">
         <td class="url-cell" title="${esc(r.original_url)}">${esc(r.original_url)}</td>
         <td class="url-cell" title="${esc(r.comparison_url)}">${esc(r.comparison_url)}</td>
-        <td><span class="badge ${r.match_type}">${r.match_type.replace('_', ' ')}</span></td>
+        <td><span class="badge ${r.match_type}">${r.match_type.replace('_', ' ')}</span>${r.verdict ? `<div class="small muted" style="margin-top:4px;">${esc(String(r.verdict).replace(/_/g, ' '))}</div>` : ''}</td>
         <td><span class="score-pill"><span class="dot" style="background:var(--accent)"></span>${fmtScore(r.jaccard_score)}</span></td>
         <td><span class="score-pill"><span class="dot" style="background:#a5b4fc"></span>${fmtScore(r.cosine_score)}</span></td>
         <td><span class="badge ${r.status}">${r.status.replace('_', ' ')}</span></td>

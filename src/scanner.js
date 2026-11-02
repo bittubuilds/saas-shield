@@ -131,17 +131,46 @@ async function runScan(scanId) {
       const existing = db.prepare('SELECT id FROM results WHERE workspace_id=? AND dedupe_key=?').get(scan.workspace_id, dedupeKey);
       if (existing) {
         // Same finding re-observed: refresh timestamp + latest scan, keep review status.
-        db.prepare('UPDATE results SET last_observed_at=?, latest_scan_id=?, updated_at=? WHERE id=?')
-          .run(utcNow(), scanId, utcNow(), existing.id);
+        db.prepare(`UPDATE results SET last_observed_at=?, latest_scan_id=?, updated_at=?,
+                      signals=?, structural_score=? WHERE id=?`)
+          .run(utcNow(), scanId, utcNow(),
+               JSON.stringify({
+                 verdict: result.verdict || null,
+                 verdict_explanation: sim.verdictExplanation(result.verdict) || null,
+                 match_type: result.matchType,
+                 jaccard: result.jaccard,
+                 cosine: result.cosine,
+                 words_original: result.wordsA,
+                 words_comparison: result.wordsB,
+                 shared_passages: (result.passages || []).length
+               }),
+               typeof result.structuralScore === 'number' ? result.structuralScore : null,
+               existing.id);
         continue;
       }
 
       const resultId = newId('res');
       const first = utcNow();
-      db.prepare(`INSERT INTO results (id, workspace_id, scan_id, latest_scan_id, original_page_id, comparison_page_id, original_url, comparison_url, match_type, jaccard_score, cosine_score, status, dedupe_key, first_observed_at, last_observed_at, updated_at)
-                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      // The engine's judgement was being computed and then thrown away: the API
+      // reads results.signals for the verdict, so findings showed raw scores with
+      // no interpretation. Store it with the sub-signals behind it.
+      const signals = JSON.stringify({
+        verdict: result.verdict || null,
+        verdict_explanation: sim.verdictExplanation(result.verdict) || null,
+        match_type: result.matchType,
+        jaccard: result.jaccard,
+        cosine: result.cosine,
+        words_original: result.wordsA,
+        words_comparison: result.wordsB,
+        shared_passages: (result.passages || []).length
+      });
+      const structural = typeof result.structuralScore === 'number' ? result.structuralScore : null;
+      const limitations = JSON.stringify(result.limitations || []);
+      db.prepare(`INSERT INTO results (id, workspace_id, scan_id, latest_scan_id, original_page_id, comparison_page_id, original_url, comparison_url, match_type, jaccard_score, cosine_score, status, dedupe_key, first_observed_at, last_observed_at, updated_at, structural_score, signals, limitations)
+                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
         .run(resultId, scan.workspace_id, scanId, scanId, a.id, b.id, a.url, b.url,
-             result.matchType, result.jaccard, result.cosine, 'new', dedupeKey, first, first, first);
+             result.matchType, result.jaccard, result.cosine, 'new', dedupeKey, first, first, first,
+             structural, signals, limitations);
 
       for (const p of result.passages.slice(0, 20)) {
         db.prepare('INSERT INTO passages (id, result_id, original_text, comparison_text, word_count, score, created_at) VALUES (?,?,?,?,?,?,?)')

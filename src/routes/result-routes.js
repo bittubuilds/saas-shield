@@ -22,6 +22,12 @@ router.get('/workspaces/:workspaceId/results', requireWorkspace(), (req, res) =>
                 OR r.comparison_page_id IN (SELECT id FROM pages WHERE website_id=?))`;
     args.push(site.id, site.id);
   }
+  if (q.scan_id) {
+    // Findings for one run: the UI links to a scan, but the API had no way to scope
+    // the list to it, so a thin scan showed another scan's findings.
+    sql += ' AND (r.scan_id = ? OR r.latest_scan_id = ?)';
+    args.push(String(q.scan_id), String(q.scan_id));
+  }
   if (q.status && ['new', 'in_review', 'confirmed', 'dismissed'].includes(q.status)) {
     sql += ' AND r.status = ?';
     args.push(q.status);
