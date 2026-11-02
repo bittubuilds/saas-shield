@@ -387,3 +387,37 @@ test('F4: a forged payload cannot change a row without a valid signature', async
   assert.equal(r.status, 401);
   assert.equal(db.prepare('SELECT status FROM email_outbox WHERE provider_message_id=?').get(sent.messageId).status, 'sent');
 });
+
+// ---------------------------------------------------------------------------
+// Event ordering: webhooks are retried and can arrive out of order.
+// ---------------------------------------------------------------------------
+test('H: a late or duplicate event never regresses the stored outcome', async () => {
+  await ready();
+  config.email.resendWebhookSecret = WEBHOOK_SECRET;
+  config.email.provider = 'resend';
+  config.email.resendApiKey = 're_test_key';
+  config.email.from = 'SaaS Shield <alerts@shield.test>';
+
+  const sent = await email.sendMail({ to: 'order@example.org', subject: 's', text: 't', context: 'test' });
+  assert.equal(sent.status, 'sent');
+  const id = sent.messageId;
+  const row = () => db.prepare('SELECT status, delivered_at FROM email_outbox WHERE provider_message_id=?').get(id);
+
+  const deliver = async (type) => {
+    const body = JSON.stringify({ type, data: { email_id: id } });
+    return postWebhook(body, sign(body));
+  };
+
+  assert.equal((await deliver('email.delivered')).status, 200);
+  const first = row();
+  assert.equal(first.status, 'delivered');
+
+  await deliver('email.delivered');          // duplicate
+  await deliver('email.sent');               // out of order, lower rank
+  const after = row();
+  assert.equal(after.status, 'delivered', 'a late email.sent must not soften a delivered result');
+  assert.equal(after.delivered_at, first.delivered_at, 'the first delivery timestamp is kept');
+
+  await deliver('email.bounced');            // hard failure outranks a soft success
+  assert.equal(row().status, 'bounced');
+});

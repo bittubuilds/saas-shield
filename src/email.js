@@ -79,6 +79,9 @@ function describeConfig() {
     from: config.email.from,
     test_sender: testSender,
     delivery_tracking: Boolean(config.email.resendWebhookSecret),
+    // Deployment marker: proves which build is live without exposing internals.
+    error_redaction: true,
+    webhook_signature_version: 'svix-v1',
     detail: provider
       ? `Outbound email uses the "${provider}" provider.`
       : 'No email provider is configured. Verification links and alert emails will be recorded as skipped, not sent.',
@@ -197,13 +200,30 @@ function applyProviderEvent({ messageId, event, at }) {
   };
   const status = map[event];
   if (!status) return false;
+
+  // Events can arrive out of order and can be retried. Rank them so a late
+  // 'email.sent' never overwrites a 'delivered'/'bounced' outcome, and a terminal
+  // state is never replaced by a softer one.
+  const RANK = { failed: 1, accepted: 1, delayed: 2, delivered: 3, bounced: 3, complained: 3, opened: 4, clicked: 4 };
+  const TERMINAL = new Set(['delivered', 'bounced', 'complained']);
   const now = utcNow();
-  const res = db.prepare(`UPDATE email_outbox
-      SET status=?, last_event=?, last_event_at=?,
-          delivered_at=CASE WHEN ?='delivered' THEN COALESCE(delivered_at, ?) ELSE delivered_at END,
-          updated_at=?
-      WHERE provider_message_id=?`).run(status, event, at || now, status, at || now, now, messageId);
-  return res.changes > 0;
+  const rows = db.prepare('SELECT id, status FROM email_outbox WHERE provider_message_id=?').all(messageId);
+  let changed = 0;
+  for (const row of rows) {
+    const current = row.status;
+    const isTerminal = TERMINAL.has(current);
+    const rankNow = RANK[status] || 0;
+    const rankCur = RANK[current] || 0;
+    if (isTerminal && rankNow < RANK.delivered) continue;       // never soften a terminal outcome
+    if (rankNow < rankCur) continue;                            // never move backwards
+    db.prepare(`UPDATE email_outbox
+        SET status=?, last_event=?, last_event_at=?,
+            delivered_at=CASE WHEN ?='delivered' THEN COALESCE(delivered_at, ?) ELSE delivered_at END,
+            updated_at=?
+        WHERE id=?`).run(status, event, at || now, status, at || now, now, row.id);
+    changed += 1;
+  }
+  return changed > 0;
 }
 
 function logOutcome(result, message) {
