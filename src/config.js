@@ -56,6 +56,8 @@ const config = {
     webhookUrl: env.EMAIL_WEBHOOK_URL || '',
     webhookToken: env.EMAIL_WEBHOOK_TOKEN || '',
     timeoutMs: num(env.EMAIL_TIMEOUT_MS, 10000),
+    // Svix signing secret for Resend delivery webhooks (whsec_...).
+    resendWebhookSecret: env.RESEND_WEBHOOK_SECRET || '',
     // Dev sink: append every outbound email to this file instead of sending.
     devSinkFile: env.EMAIL_DEV_SINK || ''
   },

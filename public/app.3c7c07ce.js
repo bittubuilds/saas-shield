@@ -430,20 +430,53 @@ async function resultDetailView(id) {
   <p class="muted small" style="margin-top:18px;">This record shows what the system observed on public pages at capture time. It does not independently prove ownership, intent, or infringement.</p>`;
 }
 
-function renderVerificationSent(email, verification) {
-  const skipped = verification.delivery === 'skipped';
-  const devLink = verification.dev_link;
+function deliveryToast(verification) {
+  const d = verification && verification.delivery;
+  if (d === 'sent') {
+    return verification.test_sender
+      ? { kind: 'error', msg: 'Resend accepted it, but the test sender only delivers to the Resend account owner. Verify a domain to email users.' }
+      : { kind: 'success', msg: 'Confirmation email accepted by Resend. Check your inbox.' };
+  }
+  if (d === 'skipped') {
+    return { kind: 'error', msg: 'No email was sent: this deployment has no email provider configured.' };
+  }
+  return { kind: 'error', msg: 'The confirmation email could not be sent.' };
+}
+
+function renderVerificationSent(emailAddress, verification) {
+  const v = verification || {};
+  const state = v.delivery === 'sent' ? 'sent' : (v.delivery === 'skipped' ? 'skipped' : 'failed');
+  const devLink = v.dev_link;
+  const note = v.note ? `<p class="small" style="margin:8px 0 0;">${esc(v.note)}</p>` : '';
+  const devHint = devLink ? `For local development, use this link: <a href="${esc(devLink)}">confirm now</a>.` : '';
+  let notice;
+  if (state === 'failed') {
+    notice = `<div class="notice warn">
+        <strong>We could not send the confirmation email.</strong>${note}
+        ${devLink ? `<p class="small" style="margin:8px 0 0;">${devHint}</p>` : ''}
+      </div>`;
+  } else if (state === 'skipped') {
+    notice = `<div class="notice warn">
+        <strong>No email was sent.</strong> This deployment has no email provider configured, so the confirmation link could not be delivered.${note}
+        ${devLink ? `<p class="small" style="margin:8px 0 0;">${devHint}</p>` : ''}
+      </div>`;
+  } else if (v.test_sender) {
+    notice = `<div class="notice warn">
+        <strong>Accepted by Resend, delivery limited.</strong>${note}
+      </div>`;
+  } else {
+    notice = `<div class="notice">
+        <strong>Accepted by Resend.</strong> That means the provider queued the message; it is not proof of delivery.
+        The link in that email works once and expires in ${esc(String(v.expires_at || '24 hours').slice(0, 10) || '24 hours')}.
+      </div>`;
+  }
   root.innerHTML = `
   <div class="auth-wrap"><div class="auth-card">
     <div class="auth-brand"><a class="logo" href="/">${LOGO_LOCKUP}</a></div>
     <div class="card">
       <h2>Confirm your email</h2>
-      <p class="subhead">We need to confirm <strong>${esc(email)}</strong> before your workspace is activated.</p>
-      ${skipped ? `<div class="notice warn">
-        <strong>No email was sent.</strong> This deployment has no email provider configured, so the confirmation link could not be delivered.
-        ${devLink ? `For local development, use this link: <a href="${esc(devLink)}">confirm now</a>.` : 'Set up an email provider (see README) and use "Resend".'}
-      </div>` : `<div class="notice">The link in that email works once and expires in ${esc(String(verification.expires_at || '24 hours').slice(0, 10) || '24 hours')}.</div>`}
-      ${devLink && !skipped ? `<p class="small muted">Development link: <a href="${esc(devLink)}">confirm now</a></p>` : ''}
+      <p class="subhead">We need to confirm <strong>${esc(emailAddress)}</strong> before your workspace is activated.</p>
+      ${notice}
       <p class="small muted" style="margin-top:14px;">Nothing arrived? Check spam, or
         <button class="btn ghost sm" id="resendBtn" type="button">resend the confirmation email</button>.</p>
       <p class="small muted" style="margin-top:10px;"><a href="#/signin">Back to sign in</a></p>
@@ -453,13 +486,12 @@ function renderVerificationSent(email, verification) {
   if (btn) btn.addEventListener('click', async () => {
     btn.disabled = true;
     try {
-      const r = await api('/auth/verify/resend', { method: 'POST', body: { email } });
-      toast(r.verification && r.verification.delivery === 'skipped'
-        ? 'No email provider configured, so nothing was sent.'
-        : 'Confirmation email sent.', r.verification && r.verification.delivery === 'skipped' ? 'error' : 'success');
+      const r = await api('/auth/verify/resend', { method: 'POST', body: { email: emailAddress } });
+      const t = deliveryToast(r.verification);
+      toast(t.msg, t.kind);
+      renderVerificationSent(emailAddress, r.verification || {});
     } catch (err) {
       toast(err.message, 'error');
-    } finally {
       btn.disabled = false;
     }
   });
@@ -1328,9 +1360,8 @@ function bindPage(hash) {
   if (resendVerify) resendVerify.addEventListener('click', async () => {
     try {
       const r = await api('/auth/verify/resend', { method: 'POST', body: { email: me.user.email } });
-      toast(r.verification && r.verification.delivery === 'skipped'
-        ? 'No email provider configured, so nothing was sent.'
-        : 'Confirmation email sent.', r.verification && r.verification.delivery === 'skipped' ? 'error' : 'success');
+      const t = deliveryToast(r.verification);
+      toast(t.msg, t.kind);
     } catch (err) { toast(err.message, 'error'); }
   });
 

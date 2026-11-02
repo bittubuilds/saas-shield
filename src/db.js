@@ -478,6 +478,35 @@ const MIGRATIONS = [
       );
       CREATE INDEX IF NOT EXISTS idx_discoveries_ws ON discoveries(workspace_id);
     `
+  },
+  {
+    version: 7,
+    name: 'email-outbox-for-send-audit-and-delivery-status',
+    sql: `
+      -- Every outbound email attempt, with the provider's id so a later webhook
+      -- can attach real delivery status. Absence of a row would mean an email was
+      -- never even attempted.
+      CREATE TABLE email_outbox (
+        id TEXT PRIMARY KEY,
+        to_email TEXT NOT NULL,
+        to_domain TEXT,
+        subject TEXT,
+        provider TEXT,
+        provider_message_id TEXT,
+        status TEXT NOT NULL,              -- sent|failed|skipped, then accepted|delivered|bounced|...
+        error_code TEXT,
+        error_message TEXT,
+        test_sender INTEGER NOT NULL DEFAULT 0,
+        context TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        delivered_at TEXT,
+        last_event TEXT,
+        last_event_at TEXT
+      );
+      CREATE INDEX idx_email_outbox_created ON email_outbox(created_at DESC);
+      CREATE INDEX idx_email_outbox_msg ON email_outbox(provider_message_id);
+    `
   }
 ];
 

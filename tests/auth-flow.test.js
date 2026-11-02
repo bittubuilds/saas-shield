@@ -498,6 +498,6 @@ test('accounts created before email verification keep working after the migratio
   assert.ok(user.email_verified_at, 'a pre-existing account must not be locked out');
   assert.equal(user.email_verified_source, 'migration');
   const versions = upgraded.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((r) => r.version);
-  assert.deepEqual(versions, [1, 2, 3, 4, 5, 6], 'every migration ran, in order');
+  assert.deepEqual(versions, [1, 2, 3, 4, 5, 6, 7], 'every migration ran, in order');
   upgraded.close();
 });

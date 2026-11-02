@@ -319,8 +319,16 @@ test('landing and app pages serve, unknown API paths 404', async (t) => {
   assert.ok((await landing.text()).includes('SaaS Shield'));
   const appHtml = await fetch(ROOT + '/app');
   assert.equal(appHtml.status, 200);
-  const css = await fetch(ROOT + '/styles.a2f20d8f.css');
+  // Asset filenames are content-hashed, so read the real name out of the HTML
+  // instead of pinning a hash that changes on every frontend edit.
+  const html = await appHtml.text();
+  const cssHref = (html.match(/href="(\/styles\.[a-z0-9]+\.css)"/) || [])[1];
+  assert.ok(cssHref, 'app.html links a hashed stylesheet');
+  const css = await fetch(ROOT + cssHref);
   assert.equal(css.status, 200);
+  const jsHref = (html.match(/src="(\/app\.[a-z0-9]+\.js)"/) || [])[1];
+  assert.ok(jsHref, 'app.html links a hashed script');
+  assert.equal((await fetch(ROOT + jsHref)).status, 200);
   const noRoute = await fetch(BASE + '/nothing');
   assert.ok([401, 404].includes(noRoute.status), 'unknown api path must not leak anything');
   const deepLink = await fetch(ROOT + '/app/results/xyz');

@@ -14,6 +14,7 @@ const workspaceRoutes = require('./routes/workspace-routes');
 const monitorRoutes = require('./routes/monitor-routes');
 const alertRoutes = require('./routes/alert-routes');
 const internalRoutes = require('./routes/internal-routes');
+const webhookRoutes = require('./routes/webhook-routes');
 const discoverRoutes = require('./routes/discover-routes');
 
 const app = express();
@@ -27,6 +28,9 @@ if (config.trustProxyHops > 0) {
   app.set('trust proxy', false);
 }
 
+// Webhooks need the raw body for signature verification, so they are mounted
+// before the JSON parser.
+app.use('/api', webhookRoutes);
 app.use(express.json({ limit: '64kb' }));
 
 // Security headers. No user-controlled HTML is rendered by the API, and the

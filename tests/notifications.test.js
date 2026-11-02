@@ -162,6 +162,11 @@ test('the weekly digest lists competitors, changes and links to each changelog e
   const period = alerts.digestPeriod(settings, new Date('2026-11-02T09:00:00Z'));   // after Monday 08:00 UTC
   assert.equal(period.periodKey, alerts.isoWeekKey(period.end));
 
+  // The seeded changes must sit inside the period being digested, otherwise the
+  // test silently starts asserting against an empty digest as real time moves on.
+  const inWindow = new Date(period.start.getTime() + 6 * 3600 * 1000).toISOString();
+  db.prepare("UPDATE changes SET detected_at=?, status='open' WHERE workspace_id=?").run(inWindow, WS);
+
   const digest = alerts.buildDigest(WS, period);
   assert.ok(digest.monitored.length >= 1, 'monitored competitors are listed');
   assert.equal(digest.monitored[0].label, 'Rival CRM');

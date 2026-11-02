@@ -80,22 +80,60 @@ function deliverVerification({ userId, emailAddress, workspaceName, ip }) {
   return { ok: true, issued, message };
 }
 
+// User-safe explanation of a delivery outcome. No provider internals, no keys.
+function deliveryNote(result) {
+  const code = result.errorCode || '';
+  if (result.status === 'sent') {
+    if (result.testSender) {
+      return 'Resend accepted the message, but this deployment sends from the test ' +
+        'address (onboarding@resend.dev), which Resend only delivers to the address ' +
+        'on its own account. Verify a domain at resend.com/domains and set EMAIL_FROM ' +
+        'to an address on that domain to reach everyone else.';
+    }
+    return null;
+  }
+  if (result.status === 'skipped') {
+    if (code === 'invalid_recipient') return 'That address cannot receive email.';
+    return 'No email provider is configured on this deployment, so no message was sent. ' +
+      'The server log shows which variable is missing.';
+  }
+  switch (code) {
+    case 'test_sender_restricted':
+      return 'The email provider refused delivery: this deployment sends from Resend\'s ' +
+        'test address (onboarding@resend.dev), which can only email the address on the ' +
+        'Resend account. Verify a domain at resend.com/domains and set EMAIL_FROM to an ' +
+        'address on it.';
+    case 'auth_error':
+      return 'The email provider rejected the request. The server log records the reason.';
+    case 'rate_limited':
+      return 'The email provider is rate limiting right now. Try again in a minute.';
+    case 'network':
+      return 'The email provider could not be reached. Try again in a moment.';
+    default:
+      return 'The confirmation email could not be sent. Try again, or contact support if it keeps failing.';
+  }
+}
+
 async function sendVerificationEmail(details) {
   const { issued, message } = details;
   const result = await email.sendMail(message);
   const payload = {
     required: config.auth.requireEmailVerification,
+    // 'sent' = the provider accepted it AND returned an id. Never "delivered".
     delivery: result.status,
+    accepted: result.status === 'sent',
+    delivery_error_code: result.errorCode || null,
     delivery_error: result.error || null,
-    expires_at: issued.expiresAt
+    retryable: Boolean(result.retryable),
+    test_sender: Boolean(result.testSender),
+    message_id: result.messageId || null,
+    expires_at: issued.expiresAt,
+    note: deliveryNote(result)
   };
   if (config.auth.devExposeVerificationLink && !config.isProduction) {
     // Local/dev convenience only. Forced off in production by config.
     payload.dev_link = issued.link;
     payload.dev_code = issued.code;
-  }
-  if (result.status === 'skipped') {
-    payload.note = 'No email provider is configured, so no verification email was sent. See README "Email provider configuration".';
   }
   return payload;
 }

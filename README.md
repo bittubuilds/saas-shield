@@ -205,3 +205,34 @@ like `SaaS Shield <no-reply@mail.yourdomain.com>`.
 `GET /api/auth/config` reports the live state (`email.configured`, `missing`) so a
 misconfigured deployment is visible instead of silently losing mail. When no provider is
 configured, deliveries are recorded as `skipped` with the reason, never as sent.
+
+## Email delivery: what each status means
+
+The app never reports "sent" from a request it merely made. Every attempt is
+classified and written to the `email_outbox` table (migration 7).
+
+| Status | Meaning |
+| --- | --- |
+| `sent` | Resend accepted the message **and** returned an email id. Not a delivery guarantee. |
+| `failed` | Resend rejected it, the network failed, or no id came back. `delivery_error_code` says why. |
+| `skipped` | No provider configured, or the address is invalid. No message exists. |
+
+Delivery (delivered / bounced / complained / delayed) only comes from Resend
+webhooks. Set `RESEND_WEBHOOK_SECRET` and point a Resend webhook at
+`https://<app>/api/webhooks/resend`; signatures are verified over the raw body
+with a 5-minute tolerance, so forged events and replays are rejected.
+
+### The `onboarding@resend.dev` trap
+
+`EMAIL_FROM` defaults to Resend's shared test sender. Resend **only delivers
+those emails to the address on the Resend account** and rejects every other
+recipient with HTTP 403 (`You can only send testing emails to your own email
+address`). The API reports the failure honestly and the UI shows it instead of a
+fake "Mail sent".
+
+To email real users: verify a domain at resend.com/domains, then set
+`EMAIL_FROM` to an address on that domain (for example
+`SaaS Shield <alerts@yourdomain.com>`). Nothing else in the code changes.
+
+Relevant variables: `EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, `EMAIL_FROM`,
+`RESEND_WEBHOOK_SECRET`, `PUBLIC_BASE_URL` (verification links are built from it).
