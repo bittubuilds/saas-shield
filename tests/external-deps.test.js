@@ -153,8 +153,9 @@ test('registration and login work with no email provider at all', async () => {
     method: 'POST', body: { email: 'mvp@example.com', password: 'longenough123', workspace_name: 'MVP Co' }
   });
   assert.equal(signup.status, 201);
-  assert.ok(!signup.data.verification || signup.data.verification.required === false,
-    'instant mode must not ask for a confirmation that can never arrive');
+  assert.equal(signup.data.verification.required, false);
+  assert.equal(signup.data.verification.delivery, 'not_needed', 'no provider call in instant mode');
+  assert.equal(signup.data.verification.delivery_error, undefined, 'no provider error is surfaced');
 
   const me = await c('/me');
   assert.equal(me.status, 200, 'signup starts a session in instant mode');

@@ -115,6 +115,16 @@ function deliveryNote(result) {
 }
 
 async function sendVerificationEmail(details) {
+  // Instant mode needs no message, so do not call the provider at all. Otherwise
+  // every signup burns a provider request and reports a pointless failure.
+  if (!config.auth.requireEmailVerification) {
+    return {
+      required: false,
+      delivery: 'not_needed',
+      accepted: false,
+      note: 'Email verification is disabled on this deployment, so no confirmation email was sent.'
+    };
+  }
   const { issued, message } = details;
   const result = await email.sendMail(message);
   const payload = {
