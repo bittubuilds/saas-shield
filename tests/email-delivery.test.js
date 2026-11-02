@@ -148,6 +148,11 @@ test('B: the Resend test-sender restriction is reported as a hard failure', asyn
   const row = lastOutbox();
   assert.equal(row.error_code, 'test_sender_restricted');
   assert.ok(row.error_message && row.error_message.length <= 240);
+  // Resend names the Resend account owner in that error. That address must not be
+  // stored verbatim or handed to whoever is signing up.
+  assert.ok(!/owner@example\.org/.test(String(r.error)), 'provider-side address must be masked');
+  assert.ok(!/owner@example\.org/.test(String(row.error_message)), 'stored error must be masked');
+  assert.match(String(r.error), /o\*+@example\.org/);
 });
 
 test('B2: auth errors, rate limits and 5xx are classified for the retry ladder', async () => {

@@ -106,10 +106,12 @@ function classifyProviderError(status, detail) {
 }
 
 function safeErrorText(detail) {
-  // Provider messages are safe to log but may echo addresses; keep them short and
-  // strip anything that looks like a key.
+  // Provider messages are short and useful, but they can echo addresses (Resend
+  // names the account owner when the test sender is used) and, if a key ever
+  // appeared, it must not survive. Mask both before logging or storing.
   return String(detail || '')
     .replace(/re_[A-Za-z0-9_-]{8,}/g, 're_***')
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, (m) => maskEmail(m))
     .replace(/\s+/g, ' ')
     .slice(0, 240);
 }
