@@ -23,7 +23,10 @@ function authModeNote() {
   const c = AUTH_CFG || {};
   if (!c.auth_mode) return '';
   if (c.auth_mode === 'instant') {
-    return '<div class="notice" style="margin-bottom:14px;">This deployment runs <strong>without email verification</strong>: your account is active immediately. That is deliberate - it cannot deliver confirmation email to arbitrary addresses yet.</div>';
+    // Instant mode is the deployment's own configuration detail, not something a
+    // visitor needs to read on the sign-in card. The verification notice below is
+    // a different message and stays.
+    return '';
   }
   return '<div class="notice" style="margin-bottom:14px;">Email verification is on: we email a confirmation link before your first sign-in.</div>';
 }
