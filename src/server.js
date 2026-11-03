@@ -82,6 +82,8 @@ app.use('/api/auth', authRoutes);
 // The SPA reads the session from /api/me (see public/app.js). Keep it working.
 app.get('/api/me', requireAuth, authRoutes.meHandler);
 app.use('/api/internal', internalRoutes);
+// TEMPORARY: database diagnostic, remove with the file (docs/DB-DIAGNOSTIC.md).
+app.use('/api/internal', require('./routes/db-diagnostic-routes').router);
 app.use('/api', websiteRoutes.router);
 app.use('/api', scanRoutes);
 app.use('/api', resultRoutes);

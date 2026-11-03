@@ -161,6 +161,9 @@ if (!config.monitor.frequencies.includes(config.monitor.defaultFrequencyHours)) 
   config.monitor.frequencies.sort((a, b) => a - b);
 }
 
+// Temporary database diagnostic endpoint (see docs/DB-DIAGNOSTIC.md).
+config.dbDiagnosticSecret = env.DB_DIAGNOSTIC_SECRET || '';
+
 require('./authmode').apply(config);
 
 module.exports = config;
