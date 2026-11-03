@@ -142,6 +142,19 @@ It does not touch the database, so it stays fast; a failing database shows up as
 500s on real endpoints instead. The Docker image declares a `HEALTHCHECK` that
 calls it every 30 s with a 20 s start period.
 
+## 10b. Hardening notes
+
+- The process writes **only** inside `/app/data`. `EMAIL_DEV_SINK` is ignored when
+  `NODE_ENV=production`, so nothing is written elsewhere; `/app` itself is
+  root-owned and read-only to UID 10001.
+- `EXPOSE 3000` is documentation only. Change the port with `-e PORT=8080` and
+  `-p 8080:8080`; no rebuild is needed.
+- Running with `--read-only --tmpfs /tmp` should work given the write surface
+  above, but that combination has **not been tested** here.
+- The image contains no credentials: `.dockerignore` keeps `.env*`, keys and any
+  `*.db` out of the build context, and the database is created on the volume at
+  first start.
+
 ## 11. Environment variables
 
 | Variable | Default | Purpose |

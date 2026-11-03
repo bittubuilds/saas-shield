@@ -35,7 +35,7 @@ COPY docs ./docs
 RUN groupadd --system --gid 10001 shield \
  && useradd --system --uid 10001 --gid shield --home /app shield \
  && mkdir -p /app/data \
- && chown -R shield:shield /app/data /app
+ && chown shield:shield /app/data
 
 USER shield:shield
 
