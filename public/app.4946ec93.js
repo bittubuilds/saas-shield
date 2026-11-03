@@ -93,19 +93,36 @@ const ICONS = {
 
 const NAV = [
   ['#/dashboard', 'Dashboard', 'dash'],
-  ['#/changes', 'Changelog', 'doc'],
-  ['#/alerts', 'Alerts', 'bolt'],
   ['#/monitoring', 'Monitoring', 'scans'],
   ['#/websites', 'Websites', 'sites'],
+  ['#/changes', 'Changelog', 'doc'],
+  ['#/alerts', 'Alerts', 'bolt'],
   ['#/scans', 'Scans', 'scans'],
   ['#/results', 'Findings', 'results'],
   ['#/settings', 'Settings', 'settings']
 ];
 
+// Sidebar sections. The mobile bar keeps the flat NAV order.
+const NAV_GROUPS = [
+  ['Monitor', ['#/dashboard', '#/monitoring', '#/websites']],
+  ['Review', ['#/changes', '#/alerts', '#/results']],
+  ['Scan', ['#/scans']],
+  ['', ['#/settings']]
+];
+
 function shell(content, activeRoute) {
   const ws = me && me.workspaces ? me.workspaces.find((w) => w.id === wsId) : null;
-  const links = NAV.map(([href, label, icon]) =>
-    `<a class="navlink ${location.hash.startsWith(href) && (href !== '#/results' || !location.hash.startsWith('#/results/')) ? 'active' : ''}" href="${href}">${ICONS[icon]} ${label}</a>`).join('');
+  const byHref = new Map(NAV.map(([href, label, icon]) => [href, { label, icon }]));
+  const isActive = (href) => location.hash.startsWith(href)
+    && !(href === '#/results' && location.hash.startsWith('#/results/'));
+  const links = NAV_GROUPS.map(([group, hrefs]) => {
+    const section = hrefs.map((href) => {
+      const item = byHref.get(href);
+      if (!item) return '';
+      return `<a class="navlink ${isActive(href) ? 'active' : ''}" href="${href}"${isActive(href) ? ' aria-current="page"' : ''}>${ICONS[item.icon]} ${item.label}</a>`;
+    }).join('');
+    return `${group ? `<div class="kicker" style="padding:14px 10px 6px;">${group}</div>` : '<div style="height:1px;background:var(--line);margin:10px 10px;"></div>'}${section}`;
+  }).join('');
   const mobileLinks = NAV.map(([href, label, icon]) =>
     `<a class="navlink ${location.hash.startsWith(href) ? 'active' : ''}" href="${href}">${ICONS[icon]} ${label}</a>`).join('');
   return `
@@ -163,15 +180,28 @@ function authView(mode = 'signin') {
 
 async function dashboardView() {
   const d = await api(`/workspaces/${wsId}/dashboard`);
-  const statCard = (label, num, sub) => `<div class="stat"><div class="lbl">${label}</div><div class="num">${num}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+  const statCard = (label, num, sub) => `<div class="stat"><div class="num">${num}</div><div class="lbl">${label}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
   return `
   <div class="page-head">
-    <div><h1>Dashboard</h1><p>Real data from your workspace - no sample records.</p></div>
-    <div style="display:flex; gap:10px;">
+    <div>
+      <h1>Dashboard</h1>
+      <p>${d.monitored_websites === 0
+        ? 'Nothing is being watched yet. Add a website to start scanning and monitoring.'
+        : `Watching ${d.monitored_websites} ${d.monitored_websites === 1 ? 'website' : 'websites'}${d.findings_needing_review ? `, with ${d.findings_needing_review} finding${d.findings_needing_review === 1 ? '' : 's'} awaiting review` : ', no findings awaiting review'}.`}</p>
+    </div>
+    <div class="cta-row">
       <a class="btn secondary" href="#/monitoring">Monitoring</a>
-      <a class="btn secondary" href="#/scans/new">New scan</a>
+      <a class="btn" href="#/scans/new">New scan</a>
     </div>
   </div>
+  ${d.monitored_websites === 0 ? `<div class="card" style="margin-bottom:16px;">
+    <h3>Get started</h3>
+    <p class="small muted" style="margin:0 0 14px;">A scan compares your page against another page and shows any shared passages. Two minutes, three steps.</p>
+    <div class="cta-row">
+      <a class="btn" href="#/websites">Add your first website</a>
+      <a class="btn ghost" href="#/scans/new">Run a scan</a>
+    </div>
+  </div>` : ''}
   <div class="grid cols-4">
     ${statCard('Websites monitored', d.monitored_websites)}
     ${statCard('Scans completed', d.scans_completed, 'Last success: ' + fmtDate(d.last_successful_scan))}
