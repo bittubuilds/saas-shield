@@ -1,0 +1,31 @@
+# Dependencies (installed inside the image with npm ci)
+node_modules
+npm-debug.log*
+
+# Version control and CI
+.git
+.gitignore
+.github
+
+# Secrets: environment files are never baked into a layer
+.env
+.env.*
+*.pem
+*.key
+
+# Local databases, WAL files, backups and exported snapshots
+*.db
+*.db-wal
+*.db-shm
+data/
+backups/
+*.sqlite
+*.sqlite3
+
+# Tests, coverage and local artifacts
+tests/
+coverage/
+.nyc_output/
+*.log
+tmp/
+.DS_Store
