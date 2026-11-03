@@ -259,3 +259,34 @@ existing users out.
 Sitemap discovery reads /robots.txt for Sitemap: directives (falling back to
 /sitemap.xml), follows up to 8 sitemap files and caps at 500 URLs, all through the
 existing SSRF-guarded fetcher. Set MONITOR_USE_SITEMAP=false to disable it.
+
+## Database backends
+
+SQLite is the default and needs no configuration. Set `DATABASE_URL` to run on
+PostgreSQL instead:
+
+```
+DATABASE_URL=postgres://user:password@host:5432/dbname
+```
+
+Both backends run the same migrations from `src/db/migrations.js`, so the schemas
+cannot drift. `tests/postgres.integration.test.js` asserts that table by table and
+column by column, and is skipped when `DATABASE_URL` is unset.
+
+- `src/db/index.js` picks the backend (`DATABASE_URL` wins, SQLite otherwise).
+- `src/db/dialect.js` translates the SQLite-flavoured SQL the app is written in:
+  `?` -> `$1..$n`, `INSERT OR IGNORE` -> `ON CONFLICT DO NOTHING`, PRAGMA dropped.
+  Anything it cannot translate throws instead of failing silently.
+- `src/db/pg-backend.js` exposes the same synchronous API the routes already use.
+  The async `pg` driver lives in a worker and the caller blocks on a shared
+  buffer, which keeps the concurrency profile of the SQLite driver (queries
+  serialize per process) without rewriting ~390 call sites. Pool size comes from
+  `PG_POOL_MAX` (default 10); `PG_QUERY_TIMEOUT_MS` (default 30000) bounds a wait.
+- `BEGIN`/`COMMIT`/`ROLLBACK` pin one pooled client, so transaction semantics are
+  preserved. `db.close()` drains the pool on shutdown.
+- `DATABASE_URL` is never logged. Only `host:port/database` is reported.
+
+Free PostgreSQL options and their real limits (verified 2026-11): Render's free
+Postgres expires 30 days after creation; Neon and Supabase have free tiers with
+storage/compute caps and can suspend idle projects. Any of them works here because
+nothing depends on provider-specific features.

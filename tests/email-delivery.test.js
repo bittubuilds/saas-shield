@@ -85,7 +85,7 @@ after(() => new Promise((resolve) => {
 }));
 
 function outbox() {
-  return db.prepare('SELECT * FROM email_outbox ORDER BY created_at DESC, rowid DESC').all();
+  return db.prepare('SELECT * FROM email_outbox ORDER BY created_at DESC').all();
 }
 function lastOutbox() { return outbox()[0] || null; }
 

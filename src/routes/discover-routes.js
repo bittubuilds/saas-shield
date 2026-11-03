@@ -1,7 +1,7 @@
 'use strict';
 const express = require('express');
 const search = require('../search');
-const db = require('../db');
+const db = require('../db/index');
 const discover = require('../discover');
 const { requireAuth, requireWorkspace, audit, rateLimit } = require('../auth');
 const { newId, utcNow } = require('../util');

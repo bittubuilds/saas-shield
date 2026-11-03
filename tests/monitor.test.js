@@ -166,11 +166,14 @@ function changesFor(pageId) {
 
 // Changes created after a marker (rowid). Keeps each test independent of what
 // earlier tests in this file observed on the same page.
+// Snapshot the ids already present instead of relying on SQLite's implicit rowid,
+// so the same helper works on PostgreSQL.
 function markChanges(pageId) {
-  return db.prepare('SELECT COALESCE(MAX(rowid),0) r FROM changes WHERE monitored_page_id=?').get(pageId).r;
+  return new Set(db.prepare('SELECT id FROM changes WHERE monitored_page_id=?').all(pageId).map((r) => r.id));
 }
 function changesSince(pageId, mark) {
-  return db.prepare('SELECT * FROM changes WHERE monitored_page_id=? AND rowid > ? ORDER BY rowid').all(pageId, mark);
+  return db.prepare('SELECT * FROM changes WHERE monitored_page_id=? ORDER BY detected_at').all(pageId)
+    .filter((r) => !mark.has(r.id));
 }
 
 // ---------------------------------------------------------------------------
@@ -350,7 +353,7 @@ test('re-observing the same difference does not create a duplicate changelog ent
   // The repeated A->B difference must map to the same dedupe key as the first.
   const repeated = db.prepare(`SELECT COUNT(*) c FROM changes WHERE monitored_page_id=? AND category='copy'
       AND dedupe_key = (SELECT dedupe_key FROM changes WHERE monitored_page_id=? AND category='copy'
-                        AND previous_value NOT LIKE '%multi-warehouse%' ORDER BY rowid DESC LIMIT 1)`)
+                        AND previous_value NOT LIKE '%multi-warehouse%' ORDER BY created_at DESC LIMIT 1)`)
     .get(homePageId, homePageId).c;
   assert.equal(repeated, 1, 'identical evidence must not be reported twice');
   assert.equal(afterRepeat, afterRevert, 'no new change rows for a repeated difference');
@@ -361,7 +364,7 @@ test('re-observing the same difference does not create a duplicate changelog ent
   const alertRows = db.prepare('SELECT COUNT(*) c FROM alerts WHERE change_id IN (SELECT id FROM changes WHERE monitored_page_id=?)').get(homePageId).c;
   assert.equal(alertRows, changeCount(homePageId), 'one alert per unique change, never one per observation');
   const duplicateAlerts = db.prepare(`SELECT change_id, COUNT(*) c FROM alerts WHERE change_id IN
-      (SELECT id FROM changes WHERE monitored_page_id=?) GROUP BY change_id HAVING c > 1`).all(homePageId);
+      (SELECT id FROM changes WHERE monitored_page_id=?) GROUP BY change_id HAVING COUNT(*) > 1`).all(homePageId);
   assert.equal(duplicateAlerts.length, 0, 'no change may own two alerts');
 });
 

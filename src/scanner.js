@@ -2,7 +2,7 @@
 // Scan orchestration: background job runner that crawls both websites (if
 // stale), compares every eligible page pair with the similarity engine,
 // deduplicates findings across scans, and records evidence.
-const db = require('./db');
+const db = require('./db/index');
 const config = require('./config');
 const sim = require('./similarity');
 const { crawlSite } = require('./crawler');

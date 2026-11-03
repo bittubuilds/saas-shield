@@ -14,7 +14,7 @@
 //     evidence, current evidence): re-observing the same difference does not
 //     create a second changelog entry or a second alert.
 //   - A failed fetch is recorded as a failure, never as a change.
-const db = require('./db');
+const db = require('./db/index');
 const config = require('./config');
 const { fetchPage } = require('./crawler');
 const { extractStructure, normalizeAssetUrl } = require('./structure');

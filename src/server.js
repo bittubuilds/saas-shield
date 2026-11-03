@@ -2,7 +2,7 @@
 const path = require('path');
 const express = require('express');
 const config = require('./config');
-const db = require('./db');
+const db = require('./db/index');
 const email = require('./email');
 const authRoutes = require('./routes/auth-routes');
 const { requireAuth } = require('./auth');

@@ -8,7 +8,7 @@
 //   - Superseded: issuing a new token invalidates any unused earlier token.
 //   - Attempt limited: a 6-digit code path allows at most 10 tries per token.
 //   - Constant-time comparisons for both token and code lookups.
-const db = require('./db');
+const db = require('./db/index');
 const config = require('./config');
 const { sha256, utcNow, randomBytes } = require('./util');
 const { safeEqual } = require('./util');

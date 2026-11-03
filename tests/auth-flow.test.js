@@ -469,13 +469,16 @@ test('Google sign-in reports missing configuration instead of failing silently',
 // ---------------------------------------------------------------------------
 // Migration safety: accounts that existed before email verification
 // ---------------------------------------------------------------------------
-test('accounts created before email verification keep working after the migration', () => {
+const legacySkip = process.env.DATABASE_URL
+  ? 'builds a pre-verification SQLite file; PostgreSQL has no legacy-file upgrade path'
+  : false;
+test('accounts created before email verification keep working after the migration', { skip: legacySkip }, () => {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'shield-legacy-')), 'legacy.db');
   const { DatabaseSync } = require('node:sqlite');
 
   // Build a database that is exactly at schema version 1 with a real user row.
   const legacy = new DatabaseSync(file);
-  const dbSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'db.js'), 'utf8');
+  const dbSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'db', 'migrations.js'), 'utf8');
   assert.ok(dbSource.includes('initial-schema'));
   const migrations = db.MIGRATIONS;
   const first = migrations.find((m) => m.version === 1);
@@ -490,7 +493,7 @@ test('accounts created before email verification keep working after the migratio
   legacy.close();
 
   // Opening the app on that file must apply 2-5 and grandfather the account.
-  const script = `process.env.DATABASE_FILE=${JSON.stringify(file)}; require(${JSON.stringify(path.join(__dirname, '..', 'src', 'db.js'))});`;
+  const script = `process.env.DATABASE_FILE=${JSON.stringify(file)}; require(${JSON.stringify(path.join(__dirname, '..', 'src', 'db', 'index.js'))});`;
   execFileSync(process.execPath, ['-e', script], { stdio: 'pipe', cwd: path.join(__dirname, '..') });
 
   const upgraded = new DatabaseSync(file);

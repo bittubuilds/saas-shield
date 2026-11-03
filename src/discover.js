@@ -8,7 +8,7 @@
 // discovered sites are simply search results; whether they actually copied
 // content is decided by the scan, with evidence.
 
-const db = require('./db');
+const db = require('./db/index');
 const config = require('./config');
 const sim = require('./similarity');
 const scanner = require('./scanner');

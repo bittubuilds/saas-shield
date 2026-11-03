@@ -17,7 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
-const db = require('./db');
+const db = require('./db/index');
 const { newId, utcNow } = require('./util');
 
 const EMAIL_RE = /^[^\s@<>,;"]{1,64}@[^\s@<>,;"]{1,255}\.[^\s@<>,;"]{2,}$/;

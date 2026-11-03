@@ -7,7 +7,7 @@
 //   one delivery per (channel, recipient, alert).
 // - Delivery failures are recorded and retried on a bounded ladder. Nothing is
 //   retried forever, and nothing is ever reported as sent when it was skipped.
-const db = require('./db');
+const db = require('./db/index');
 const config = require('./config');
 const email = require('./email');
 const normalize = require('./normalize');

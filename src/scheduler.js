@@ -14,7 +14,7 @@
 // Both call the same runTick(), and both are guarded by a database lease
 // (job_locks) so two instances, or an overlapping tick, cannot double-run checks
 // or double-send a digest.
-const db = require('./db');
+const db = require('./db/index');
 const config = require('./config');
 const monitor = require('./monitor');
 const alerts = require('./alerts');

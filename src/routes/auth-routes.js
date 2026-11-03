@@ -1,6 +1,6 @@
 'use strict';
 const express = require('express');
-const db = require('../db');
+const db = require('../db/index');
 const config = require('../config');
 const { newId, hashPassword, verifyPassword, utcNow } = require('../util');
 const {

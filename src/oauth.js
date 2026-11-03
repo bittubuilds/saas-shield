@@ -13,7 +13,7 @@
 // never linked from an email claim alone.
 const crypto = require('crypto');
 const config = require('./config');
-const db = require('./db');
+const db = require('./db/index');
 const { newId, utcNow, sha256 } = require('./util');
 
 const STATE_TTL_MS = 10 * 60 * 1000;
