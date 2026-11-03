@@ -27,28 +27,13 @@ SaaS Shield helps startup founders discover **potential copying of their public 
 
 ## Email verification
 
-New accounts must confirm their address (`AUTH_REQUIRE_EMAIL_VERIFICATION=true`, the default).
+Verification is required only when the deployment can actually deliver mail. With
+no provider, or with Resend's shared test sender, accounts are active immediately
+(`auth_mode=instant`) and stored as verified with source `instant_mode`. An
+explicit `AUTH_REQUIRE_EMAIL_VERIFICATION=true|false` always wins.
 
-1. `POST /api/auth/signup` creates the account with `email_verified_at = NULL`, issues a single-use token (SHA-256 hash stored only) and returns a generic message — never whether the address already existed.
-2. The confirmation email contains a 6-digit code and a magic link (`/api/auth/verify?token=...`).
-3. `GET /api/auth/verify` (link) or `POST /api/auth/verify` (code) confirms the address, marks the token used, and starts a session.
-4. Expired, reused, superseded and tampered tokens are rejected with a specific reason (`expired`, `used`, `invalidated`, `invalid`) shown on `/app#/verify-failed`.
-
-Rate limits: 5 resends/hour per address plus a per-IP limit. Code entry locks out after 10 wrong attempts. Passwords are scrypt-hashed; verification tokens and passwords are never logged.
-
-**Accounts created before verification existed** are grandfathered by migration 2 (`email_verified_source='migration'`) so nobody is locked out. Set `AUTH_GRANDFATHER_EXISTING=false` to require re-verification instead.
-
-### Email provider configuration
-
-Nothing is sent until a provider is configured, and the app says so instead of pretending:
-
-| `EMAIL_PROVIDER` | Requirements |
-| --- | --- |
-| *(empty)* | No delivery. Sends are recorded with `status='skipped'` and a reason; the UI shows a warning banner. |
-| `resend` | `RESEND_API_KEY`, `EMAIL_FROM` (a verified sender domain) |
-| `webhook` | `EMAIL_WEBHOOK_URL` (HTTPS, accepts `POST {from,to,subject,text,html}`), optional `EMAIL_WEBHOOK_TOKEN` |
-
-For local development set `EMAIL_DEV_SINK=/tmp/mail.jsonl` to write messages to a file, and `AUTH_DEV_EXPOSE_LINK=true` to see the confirmation link in the API response (both are ignored in production).
+Provider setup, the `onboarding@resend.dev` restriction, webhook signing and the
+meaning of each delivery status: [docs/RESEND-SETUP.md](docs/RESEND-SETUP.md).
 
 ## Google sign-in
 
@@ -108,7 +93,8 @@ External services are never contacted: fixtures are local HTTP servers with muta
 - **Similarity is evidence, not a legal conclusion.** Scores are not probabilities of infringement; shared templates and generic marketing phrasing are filtered and labelled `shared_conventions`.
 - **In-process scheduling** does not survive a sleeping host; use the cron endpoint.
 - **Screenshots of snapshots** are not captured (status reported honestly as unavailable).
-- **Single SQLite writer.** Fine for a small team; very large crawl histories should move to Postgres.
+- **SQLite is single-writer.** Fine for a small team; production deployments should set `DATABASE_URL` and use PostgreSQL.
+- **Scheduling is in-process.** On a host that sleeps, use `CRON_SECRET` with an external cron; running scans are cancelled by a restart and can be re-run safely.
 
 ## Deployment
 
@@ -121,13 +107,19 @@ External services are never contacted: fixtures are local HTTP servers with muta
    - `GET /api/auth/config` → shows whether email and Google are configured (never secrets)
    - Sign up, confirm the email, add a competitor, `POST /api/workspaces/<id>/websites/<id>/monitor`, then "Run due checks now" and confirm a changelog row after editing the competitor's page.
 
+### Where to deploy
+
+Full copy-paste recipes for Docker, Railway, Fly.io, a plain VPS, PostgreSQL and
+Neon, plus custom domains, HTTPS, `COOKIE_SECURE` and backups live in
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Production should use PostgreSQL via
+`DATABASE_URL`; SQLite on an ephemeral filesystem loses data on every redeploy.
 ## Verification of the similarity report (gowthambuilds.in vs bhaveshshaha.com)
 
 The reported "no result" was reproduced and traced to the scoring bug: corpus vectors were built once and every page pair read `vectors[0]`/`vectors[1]`, so all 35 pairs printed the same cosine score. After the fix, that pair is compared on its own evidence: 0 shared passages, 0 shared headings/links/assets, and a `shared_conventions` verdict listing what genuinely overlaps (single-column layout, one primary headline, a section list, a CTA, a form). No finding is raised, because similarity to a common portfolio layout is not evidence of copying.
 
 ## Stack
 
-- Node.js >= 22.5 (built-in `node:sqlite`), Express, vanilla JS frontend. **Only runtime dependency: express.**
+- Node.js >= 22.5 (built-in `node:sqlite`), Express, vanilla JS frontend. **Runtime dependencies: `express` and `pg`** (`pg` is only dialled when `DATABASE_URL` is set).
 - No build step. Passwords: scrypt. Sessions: random 256-bit tokens, stored SHA-256-hashed, HttpOnly cookies.
 
 ## Setup
@@ -162,22 +154,6 @@ The app tests boot two local sites: one containing a deliberately copied 100+ wo
 - **XSS:** the frontend escapes all user data; API sets no user-controlled HTML.
 - **Secrets:** none required; everything is env-config. Never set `SHIELD_ALLOW_PRIVATE_IPS=true` in production.
 - **Retrieval of evidence:** excerpts and hashes only (no full page archives); screenshots not captured in this build — the UI says so explicitly.
-
-## Deployment
-
-1. Provision any Node 22+ host (or a container). Set `NODE_ENV=production`, `COOKIE_SECURE=true`, a real `PUBLIC_BASE_URL`, and a persistent volume for `DATABASE_FILE`.
-2. `npm ci --omit=dev && npm start`.
-3. Put the app behind an HTTPS reverse proxy (nginx/Caddy) — the app itself serves HTTP.
-4. Keep the SQLite file on a persistent disk; back it up.
-
-## Known limitations
-
-- No internet-wide discovery: you must register comparison URLs yourself.
-- No background job queue: scans run in-process; a server restart cancels running scans (they can be safely re-run).
-- No screenshots of matching pages (requires a headless browser engine).
-- No email delivery (password recovery/notifications not wired).
-- Single-process SQLite: suitable for MVP scale, not horizontal scaling.
-- The crawl is polite and bounded; very large sites are only partially fetched (page/depth caps).
 
 ## Email provider (Resend)
 
