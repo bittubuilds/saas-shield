@@ -132,3 +132,24 @@ from each vendor's own pricing page, not from a comparison blog.
 Caveat for any free tier: this app opens a connection per process and keeps a
 synchronous query bridge, so it is happy with a small compute unit. Neon's
 scale-to-zero costs a short cold start on the first query after idling.
+
+## Rollback that does not lose writes
+
+Removing `DATABASE_URL` is **not** a rollback. Cutover makes PostgreSQL the only
+write target, so every account, workspace, website, scan, finding and passage
+created after cutover exists only there. Pointing the app back at the old SQLite
+file silently returns the product to its pre-cutover state.
+
+Safe procedure:
+
+1. Keep the service on PostgreSQL (nothing is lost there).
+2. Reconcile the SQLite file up to date before switching back:
+   `node tools/postgres-to-sqlite/reconcile.js --pg "$STAGING_OR_PROD_URL" --sqlite ./data/saas-shield.db --dry-run`
+   then without `--dry-run`. It inserts rows SQLite is missing and applies newer
+   versions of rows it already has, in foreign-key order, inside a transaction.
+3. Only then remove `DATABASE_URL` and redeploy.
+
+Known gap, stated plainly: *deletions* made in PostgreSQL are not replayed. If
+deletions matter, treat the SQLite file as disposable (delete it) rather than
+reconciling it, or stay on PostgreSQL. Reconciliation also cannot resolve two
+conflicting edits to the same row; it takes the newer `updated_at`.
