@@ -6,8 +6,8 @@ const CACHE = 'saas-shield-v6';
 const SHELL = [
   '/',
   '/app',
-  '/styles.af91b4df.css',
-  '/app.0cc1f3bb.js',
+  '/styles.468a6c37.css',
+  '/app.4946ec93.js',
   '/manifest.webmanifest',
   '/icon-192.png',
   '/icon-512.png',
