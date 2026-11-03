@@ -96,21 +96,22 @@ const ICONS = {
 
 const NAV = [
   ['#/dashboard', 'Dashboard', 'dash'],
-  ['#/monitoring', 'Monitoring', 'scans'],
   ['#/websites', 'Websites', 'sites'],
+  ['#/results', 'Findings', 'results']
+];
+
+const NAV_SECONDARY = [
+  ['#/scans', 'Scans', 'bolt'],
+  ['#/monitoring', 'Monitoring', 'scans'],
   ['#/changes', 'Changelog', 'doc'],
   ['#/alerts', 'Alerts', 'bolt'],
-  ['#/scans', 'Scans', 'scans'],
-  ['#/results', 'Findings', 'results'],
   ['#/settings', 'Settings', 'settings']
 ];
 
 // Sidebar sections. The mobile bar keeps the flat NAV order.
 const NAV_GROUPS = [
-  ['Monitor', ['#/dashboard', '#/monitoring', '#/websites']],
-  ['Review', ['#/changes', '#/alerts', '#/results']],
-  ['Scan', ['#/scans']],
-  ['', ['#/settings']]
+  ['', ['#/dashboard', '#/websites', '#/results']],
+  ['More', ['#/scans', '#/monitoring', '#/changes', '#/alerts']]
 ];
 
 function shell(content, activeRoute) {
@@ -126,7 +127,7 @@ function shell(content, activeRoute) {
     }).join('');
     return `${group ? `<div class="kicker" style="padding:14px 10px 6px;">${group}</div>` : '<div style="height:1px;background:var(--line);margin:10px 10px;"></div>'}${section}`;
   }).join('');
-  const mobileLinks = NAV.map(([href, label, icon]) =>
+  const mobileLinks = [...NAV, ['#/settings', 'Settings', 'settings']].map(([href, label, icon]) =>
     `<a class="navlink ${location.hash.startsWith(href) ? 'active' : ''}" href="${href}">${ICONS[icon]} ${label}</a>`).join('');
   return `
   <div class="shell">
@@ -136,6 +137,7 @@ function shell(content, activeRoute) {
       ${links}
       <div class="spacer"></div>
       <div class="sidebar-foot">
+        <a class="navlink" href="#/settings">${ICONS.settings} Settings</a>
         <div class="user-chip" title="${esc(me ? me.user.email : '')}">${esc(me ? me.user.email : '')}</div>
         <a class="navlink" href="/">${ICONS.home} Back to site</a>
         <button class="navlink" style="width:100%;border:none;background:none;text-align:left" id="signoutBtn">${ICONS.signout} Sign out</button>
@@ -183,57 +185,69 @@ function authView(mode = 'signin') {
 
 async function dashboardView() {
   const d = await api(`/workspaces/${wsId}/dashboard`);
-  const statCard = (label, num, sub) => `<div class="stat"><div class="num">${num}</div><div class="lbl">${label}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+  const started = sessionStorage.getItem('shield.addedSite') || '';
+  const kpi = (num, label, tone) => `<div class="kpi${tone ? ' ' + tone : ''}"><div class="num">${num}</div><div class="lbl">${label}</div></div>`;
+  const recent = d.recent_results || [];
   return `
   <div class="page-head">
     <div>
       <h1>Dashboard</h1>
       <p>${d.monitored_websites === 0
-        ? 'Nothing is being watched yet. Add a website to start scanning and monitoring.'
-        : `Watching ${d.monitored_websites} ${d.monitored_websites === 1 ? 'website' : 'websites'}${d.findings_needing_review ? `, with ${d.findings_needing_review} finding${d.findings_needing_review === 1 ? '' : 's'} awaiting review` : ', no findings awaiting review'}.`}</p>
+        ? 'Add a website and SaaS Shield checks it for copied content automatically.'
+        : `Monitoring ${d.monitored_websites} ${d.monitored_websites === 1 ? 'website' : 'websites'}. Everything below updates on its own.`}</p>
     </div>
     <div class="cta-row">
-      <a class="btn secondary" href="#/monitoring">Monitoring</a>
-      <a class="btn" href="#/scans/new">New scan</a>
+      <a class="btn" href="#/websites" id="addFromDash">+ Add Website</a>
     </div>
   </div>
-  ${d.monitored_websites === 0 ? `<div class="card" style="margin-bottom:16px;">
-    <h3>Get started</h3>
-    <p class="small muted" style="margin:0 0 14px;">A scan compares your page against another page and shows any shared passages. Two minutes, three steps.</p>
-    <div class="cta-row">
-      <a class="btn" href="#/websites">Add your first website</a>
-      <a class="btn ghost" href="#/scans/new">Run a scan</a>
-    </div>
+  ${started ? `<div class="notice" id="addProgress" data-site="${esc(started)}">We are checking <strong>${esc(started)}</strong>. Pages are being read and compared; findings appear below as they are found.</div>` : ''}
+  <div class="kpis">
+    ${kpi(d.monitored_websites, 'Websites monitored')}
+    ${kpi(d.scans_completed, 'Completed scans')}
+    ${kpi(d.findings_total, 'Potential findings', d.findings_total > 0 ? 'accent' : '')}
+    ${kpi(d.scans_failed, 'Scan failures', d.scans_failed > 0 ? 'warn' : '')}
+  </div>
+  ${d.monitored_websites === 0 ? `<div class="card" style="margin-top:18px;">
+    <h3>How this works</h3>
+    <ol class="steps">
+      <li><strong>Add your website.</strong> Paste the address, confirm.</li>
+      <li><strong>We scan it automatically.</strong> Pages are read and compared against pages found elsewhere.</li>
+      <li><strong>Review what we find.</strong> Each match shows both sides and a similarity score.</li>
+    </ol>
+    <div class="cta-row"><a class="btn" href="#/websites">+ Add Website</a></div>
   </div>` : ''}
-  <div class="grid cols-4">
-    ${statCard('Websites monitored', d.monitored_websites)}
-    ${statCard('Scans completed', d.scans_completed, 'Last success: ' + fmtDate(d.last_successful_scan))}
-    ${statCard('Potential matches', d.findings_total, `${d.findings_needing_review} need review &middot; ${d.findings_confirmed} confirmed`)}
-    ${statCard('Scan failures', d.scans_failed, d.scans_failed > 0 ? 'Check scan history for next steps' : 'None')}
-  </div>
   ${d.failing_websites && d.failing_websites.length ? `
-    <div class="card" style="margin-top:16px; border-color:rgba(248,113,113,.35);">
-      <h3>Crawl failures</h3>
-      ${d.failing_websites.map((f) => `<p class="small" style="margin:0 0 10px;"><strong>${esc(f.submitted_url)}</strong><br><span class="muted">${esc(f.crawl_error || 'Unknown error')}</span> - verify the URL is public and reachable, then retry a scan.</p>`).join('')}
+    <div class="card" style="margin-top:18px;">
+      <h3>We could not read these websites</h3>
+      ${d.failing_websites.map((f) => `<p class="small" style="margin:0 0 10px;"><strong>${esc(f.submitted_url)}</strong><br><span class="muted">${esc(f.crawl_error || 'The site did not respond.')}</span></p>`).join('')}
+      <p class="hint" style="margin:0;">Check the address opens in a browser, then scan again.</p>
     </div>` : ''}
-  <div class="grid cols-2" style="margin-top:16px;">
-    <div class="card">
-      <h3>Recent scans</h3>
-      ${d.recent_scans.length === 0 ? emptyState('bolt', 'No scans yet', 'Add an original and a comparison website, then run your first scan.') :
-      `<table><thead><tr><th>Websites</th><th>Status</th><th>Findings</th><th>When</th></tr></thead><tbody>
-      ${d.recent_scans.map((s) => `<tr><td>${esc(hostOf(s.original_url))} &rarr; ${esc(hostOf(s.comparison_url))}</td>
-        <td><span class="badge ${s.status}">${s.status}</span></td><td class="num">${s.findings ?? '-'}</td><td class="muted small">${fmtDate(s.finished_at || s.created_at)}</td></tr>`).join('')}
-      </tbody></table>`}
+  <div class="card" style="margin-top:18px;">
+    <div class="card-head">
+      <h3>Recent findings</h3>
+      <a class="link-more" href="#/results">All findings</a>
     </div>
-    <div class="card">
-      <h3>Recent potential matches</h3>
-      ${d.recent_results.length === 0 ? emptyState('search', 'No findings yet', 'Potential matches appear here once a scan finds shared passages.') :
-      `<table><thead><tr><th>Pages</th><th>Score</th><th>Status</th></tr></thead><tbody>
-      ${d.recent_results.map((r) => `<tr class="clickable" data-result="${esc(r.id)}"><td><span class="small">${esc(hostOf(r.original_url))} vs ${esc(hostOf(r.comparison_url))}</span></td>
-        <td class="num">${fmtScore(r.jaccard_score)}</td><td><span class="badge ${r.status}">${r.status.replace('_', ' ')}</span></td></tr>`).join('')}
-      </tbody></table>`}
-    </div>
-  </div>`;
+    ${recent.length === 0 ? emptyState('search', 'Nothing found yet', d.monitored_websites ? 'We are still checking. Findings appear here the moment a page overlaps with yours.' : 'Add a website to begin.') :
+    `<div class="table-scroll"><table><thead><tr><th>Your website</th><th>Matching website</th><th>Similarity</th><th>Type</th><th>Found</th><th></th></tr></thead><tbody>
+    ${recent.map((r) => `<tr>
+      <td>${esc(hostOf(r.original_url))}</td>
+      <td>${esc(hostOf(r.comparison_url))}</td>
+      <td class="num">${fmtScore(r.jaccard_score)}</td>
+      <td><span class="badge">${esc((r.match_type || '').replace('_', ' '))}</span></td>
+      <td class="muted small">${fmtDate(r.created_at)}</td>
+      <td><a class="btn ghost sm" href="#/results/${encodeURIComponent(r.id)}">View details</a></td>
+    </tr>`).join('')}
+    </tbody></table></div>`}
+    <p class="hint">These are potential matches, not proof of plagiarism. Open a finding to see the quoted passages side by side.</p>
+  </div>
+  ${d.recent_scans && d.recent_scans.length ? `<div class="card" style="margin-top:18px;">
+    <div class="card-head"><h3>Recent scans</h3><a class="link-more" href="#/scans">All scans</a></div>
+    <div class="table-scroll"><table><thead><tr><th>Comparing</th><th>Status</th><th>Findings</th><th>When</th></tr></thead><tbody>
+    ${d.recent_scans.slice(0, 5).map((s) => `<tr><td>${esc(hostOf(s.original_url))} vs ${esc(hostOf(s.comparison_url))}</td>
+      <td><span class="badge ${s.status}">${s.status === 'completed' ? 'Completed' : s.status === 'running' ? 'Scanning' : s.status === 'queued' ? 'Queued' : 'Failed'}</span></td>
+      <td class="num">${s.findings ?? '-'}</td><td class="muted small">${fmtDate(s.finished_at || s.created_at)}</td></tr>`).join('')}
+    </tbody></table></div>
+  </div>` : ''}`;
 }
 
 async function websitesView() {
@@ -695,8 +709,25 @@ async function handleSiteForm(e) {
   const label = elid('siteLabel').value.trim() || undefined;
   if (!url) { errEl.textContent = 'URL is required.'; return; }
   try {
-    await api(`/workspaces/${wsId}/websites`, { method: 'POST', body: { url, kind, label } });
-    toast('Website added. It will be crawled during the first scan.', 'success');
+    const created = await api(`/workspaces/${wsId}/websites`, { method: 'POST', body: { url, kind, label } });
+    const site = (created && (created.website || created)) || {};
+    // Automatic next step for the site the user just added: the existing discovery
+    // job searches for pages that overlap with it and queues a scan for each hit.
+    // Nothing is faked: if search is unconfigured or refused, we surface that.
+    let auto = '';
+    if (kind === 'original' && site.id) {
+      try {
+        await api(`/workspaces/${wsId}/discover`, { method: 'POST', body: { original_website_id: site.id } });
+        auto = ' Automatic checking has started.';
+      } catch (err) {
+        auto = err.message && /search/i.test(err.message)
+          ? ' Automatic checking needs a search provider on this deployment, so add a comparison website and start a scan yourself.'
+          : ' We could not start the automatic check just now - open Scans to start one.';
+      }
+    }
+    try { sessionStorage.setItem('shield.addedSite', site.submitted_url || url); } catch { /* private mode */ }
+    toast('Website added.' + auto, 'success');
+    location.hash = '#/dashboard';
     render();
   } catch (err) { errEl.textContent = err.message; }
 }
