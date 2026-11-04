@@ -389,3 +389,11 @@ textarea { min-height: 88px; resize: vertical; }
 .steps li { margin: 0 0 8px; font-size: 13.5px; line-height: 1.55; }
 .steps strong { color: var(--text); }
 @media (max-width: 860px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .kpi .num { font-size: 24px; } }
+
+/* One-time scan progress: a plain three-line checklist, no spinners or guesses */
+.progress { display: grid; gap: 8px; }
+.step-row { display: flex; align-items: baseline; gap: 10px; font-size: 13px; }
+.step-row .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line-strong, #2a2d33); flex: none; transform: translateY(-1px); }
+.step-row .dot.on { background: var(--accent); }
+.step-label { color: var(--text); min-width: 128px; }
+.step-detail { color: var(--muted); font-variant-numeric: tabular-nums; }

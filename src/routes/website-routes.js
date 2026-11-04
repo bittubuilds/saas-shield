@@ -4,6 +4,7 @@ const db = require('../db/index');
 const { newId, utcNow } = require('../util');
 const { requireAuth, requireWorkspace, audit, rateLimit } = require('../auth');
 const { domainOf, parseHttpUrl, UnsafeUrlError, normalizeUrl } = require('../ssrf');
+const initialScan = require('../initialscan');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -69,7 +70,32 @@ router.post('/workspaces/:workspaceId/websites', requireWorkspace(), rateLimit({
     .run(id, req.workspace.id, kind, parsed.submittedUrl, parsed.domain, label || null, now, now);
   audit(req.workspace.id, req.user.id, 'website.added', { id, kind, url: parsed.submittedUrl });
   const row = db.prepare('SELECT * FROM websites WHERE id=?').get(id);
-  res.status(201).json({ website: serializeSite(row) });
+
+  // The free product is one scan per website: start the automatic next step now
+  // (compare against a known competitor, or discover one) unless the caller opts
+  // out. This is deliberately one-shot - nothing here schedules repeats.
+  let initial = null;
+  if ((req.body || {}).auto_scan !== false) {
+    try {
+      initial = initialScan.start({ workspaceId: req.workspace.id, siteId: id, userId: req.user.id });
+      audit(req.workspace.id, req.user.id, 'website.initial_scan', {
+        id, mode: initial.mode, started: initial.started,
+        scan_id: initial.scan_id || null, discovery_id: initial.discovery_id || null
+      });
+    } catch (e) {
+      initial = { mode: 'error', started: false, message: 'The automatic scan could not be started. Open the website and start a scan from there.' };
+    }
+  }
+
+  res.status(201).json({ website: serializeSite(row), initial_scan: initial });
+});
+
+// Live status of the one-time initial scan for a website. Every field is read
+// back from what the jobs actually wrote - pages, scans, results.
+router.get('/workspaces/:workspaceId/websites/:id/initial-scan', requireWorkspace(), (req, res) => {
+  const out = initialScan.status(req.workspace.id, req.params.id);
+  if (!out) return res.status(404).json({ error: 'Website not found.' });
+  res.json(out);
 });
 
 // Update (rename/pause/resume/label)

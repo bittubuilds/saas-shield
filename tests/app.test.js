@@ -149,10 +149,10 @@ test('complete user journey: signup, websites, real scan, review, export, persis
   assert.equal(weakPw.status, 400);
 
   // --- 2. add original website; validation + duplicate rules ---
-  const origAdd = await a.req('POST', `/workspaces/${wsId}/websites`, { url: `http://127.0.0.1:${origSite.port}/`, kind: 'original' });
+  const origAdd = await a.req('POST', `/workspaces/${wsId}/websites`, { url: `http://127.0.0.1:${origSite.port}/`, kind: 'original', auto_scan: false });
   assert.equal(origAdd.status, 201);
   const origId = origAdd.data.website.id;
-  const secondOrig = await a.req('POST', `/workspaces/${wsId}/websites`, { url: `http://127.0.0.1:${origSite.port}/`, kind: 'original' });
+  const secondOrig = await a.req('POST', `/workspaces/${wsId}/websites`, { url: `http://127.0.0.1:${origSite.port}/`, kind: 'original', auto_scan: false });
   assert.equal(secondOrig.status, 409, 'only one original per workspace');
   for (const badUrl of ['notaurl', 'ftp://example.com/x', 'http://user:pw@example.com/']) {
     const r = await a.req('POST', `/workspaces/${wsId}/websites`, { url: badUrl, kind: 'comparison' });
@@ -160,12 +160,12 @@ test('complete user journey: signup, websites, real scan, review, export, persis
   }
 
   // --- 3. add comparison websites (copier + unrelated) ---
-  const dupAdd = await a.req('POST', `/workspaces/${wsId}/websites`, { url: `http://127.0.0.1:${dupSite.port}/`, kind: 'comparison', label: 'Copycat' });
+  const dupAdd = await a.req('POST', `/workspaces/${wsId}/websites`, { url: `http://127.0.0.1:${dupSite.port}/`, kind: 'comparison', label: 'Copycat', auto_scan: false });
   assert.equal(dupAdd.status, 201);
   const dupId = dupAdd.data.website.id;
-  const dupAgain = await a.req('POST', `/workspaces/${wsId}/websites`, { url: `http://127.0.0.1:${dupSite.port}/`, kind: 'comparison' });
+  const dupAgain = await a.req('POST', `/workspaces/${wsId}/websites`, { url: `http://127.0.0.1:${dupSite.port}/`, kind: 'comparison', auto_scan: false });
   assert.equal(dupAgain.status, 409, 'duplicate comparison rejected');
-  const unrelAdd = await a.req('POST', `/workspaces/${wsId}/websites`, { url: `http://127.0.0.1:${unrelSite.port}/`, kind: 'comparison' });
+  const unrelAdd = await a.req('POST', `/workspaces/${wsId}/websites`, { url: `http://127.0.0.1:${unrelSite.port}/`, kind: 'comparison', auto_scan: false });
   assert.equal(unrelAdd.status, 201);
   const unrelId = unrelAdd.data.website.id;
 
@@ -285,7 +285,7 @@ test('complete user journey: signup, websites, real scan, review, export, persis
   const crossScan = await b.req('POST', `/workspaces/${wsId}/scans`, { original_website_id: origId, comparison_website_id: dupId });
   assert.equal(crossScan.status, 404);
   // B can register the same URL in their own workspace
-  const bAdd = await b.req('POST', `/workspaces/${bWs}/websites`, { url: `http://127.0.0.1:${origSite.port}/`, kind: 'original' });
+  const bAdd = await b.req('POST', `/workspaces/${bWs}/websites`, { url: `http://127.0.0.1:${origSite.port}/`, kind: 'original', auto_scan: false });
   assert.equal(bAdd.status, 201);
   const bDash = await b.req('GET', `/workspaces/${bWs}/dashboard`);
   assert.equal(bDash.data.monitored_websites, 1);

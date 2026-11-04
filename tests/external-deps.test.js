@@ -181,11 +181,11 @@ test('two websites are crawled and compared with no search, email or domain', as
   const ws = me.data.workspaces[0].id;
 
   const orig = await c(`/workspaces/${ws}/websites`, {
-    method: 'POST', body: { url: `http://127.0.0.1:${site.address().port}/`, kind: 'original', label: 'Fixture' }
+    method: 'POST', body: { url: `http://127.0.0.1:${site.address().port}/`, kind: 'original', label: 'Fixture', auto_scan: false }
   });
   assert.equal(orig.status, 201, JSON.stringify(orig.data));
   const comp = await c(`/workspaces/${ws}/websites`, {
-    method: 'POST', body: { url: `http://127.0.0.1:${copycat.address().port}/`, kind: 'comparison', label: 'Copycat' }
+    method: 'POST', body: { url: `http://127.0.0.1:${copycat.address().port}/`, kind: 'comparison', label: 'Copycat', auto_scan: false }
   });
   assert.equal(comp.status, 201, JSON.stringify(comp.data));
 
