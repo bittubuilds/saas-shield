@@ -21,20 +21,30 @@ const { newId, utcNow } = require('./util');
 // Pick a site to compare against: a real comparison site first, then any other
 // active site in the workspace. Paused sites are skipped - the scan route would
 // reject them anyway.
-function pickComparison(workspaceId, excludeId) {
+function pickComparison(workspaceId, excludeId, excludeDomain) {
   return db.prepare(`
     SELECT id, submitted_url FROM websites
     WHERE workspace_id=? AND id!=? AND status!='paused'
+      AND normalized_domain != COALESCE(?, '')
     ORDER BY (kind='comparison') DESC, created_at ASC
-    LIMIT 1`).get(workspaceId, excludeId);
+    LIMIT 1`).get(workspaceId, excludeId, excludeDomain || '');
 }
 
 function queueScan(workspaceId, originalId, comparisonId, userId) {
   const id = newId('scn');
-  const params = { recrawl: false };
-  db.prepare(`INSERT INTO scans (id, workspace_id, original_website_id, comparison_website_id, status, params, created_by, created_at)
-              VALUES (?,?,?,?, 'queued', ?, ?, ?)`)
-    .run(id, workspaceId, originalId, comparisonId, JSON.stringify(params), userId, utcNow());
+  const params = JSON.stringify({ recrawl: false });
+  const now = utcNow();
+  // INSERT ... SELECT ... WHERE NOT EXISTS is one atomic statement in both SQLite
+  // and PostgreSQL, so two concurrent requests cannot both create the free scan.
+  const res = db.prepare(`INSERT INTO scans (id, workspace_id, original_website_id, comparison_website_id, status, params, created_by, created_at)
+    SELECT ?,?,?,?, 'queued', ?, ?, ?
+    WHERE NOT EXISTS (
+      SELECT 1 FROM scans
+      WHERE workspace_id=? AND (original_website_id=? OR comparison_website_id=?)
+        AND status IN ('queued','running','completed')
+    )`).run(id, workspaceId, originalId, comparisonId, params, userId, now,
+    workspaceId, originalId, originalId);
+  if (!res || res.changes < 1) return null;
   scanner.enqueueScan(id);
   return id;
 }
@@ -87,7 +97,16 @@ function start({ workspaceId, siteId, userId }) {
   // A pair always needs two different sites. Adding your own site means pairing it
   // with a site already registered; adding a competitor means pairing that new site
   // with your own.
-  const comparison = site.kind === 'original' ? pickComparison(workspaceId, site.id) : site;
+  const comparison = site.kind === 'original'
+    ? pickComparison(workspaceId, site.id, original.normalized_domain)
+    : site;
+
+  if (site.kind === 'comparison' && site.normalized_domain === original.normalized_domain) {
+    return {
+      mode: 'same_site', started: false,
+      message: 'That is the same site as the one you are checking, so it was registered but no scan was started.'
+    };
+  }
 
   if (comparison && comparison.id !== original.id) {
     const active = scanner.pairHasActiveScan(workspaceId, original.id, comparison.id);
@@ -95,6 +114,11 @@ function start({ workspaceId, siteId, userId }) {
       return { mode: 'scan', started: true, reused: true, scan_id: active, comparison_url: comparison.submitted_url };
     }
     const scanId = queueScan(workspaceId, original.id, comparison.id, userId);
+    if (!scanId) {
+      // Another request created the free scan between the read and the write.
+      const existing = db.prepare(`SELECT id FROM scans WHERE workspace_id=? AND (original_website_id=? OR comparison_website_id=?) ORDER BY created_at ASC LIMIT 1`).get(workspaceId, original.id, original.id);
+      return { mode: 'already_scanned', started: false, scan_id: existing ? existing.id : null, message: 'This website already has its scan, so nothing new was started.' };
+    }
     return { mode: 'scan', started: true, scan_id: scanId, comparison_url: comparison.submitted_url };
   }
 

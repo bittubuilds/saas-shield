@@ -214,3 +214,80 @@ test('auto_scan:false is respected for scripted callers', async () => {
   assert.equal(scans.data.scans.length, 0);
   site.srv.close();
 });
+
+// --- review hardening: duplicates, races, self-pairing, isolation -------------
+
+test('the same site is refused in every URL spelling', async () => {
+  await ready();
+  const site = await startSite({ '/': ['text/html', page('Home')] });
+  const c = client();
+  const wsId = await newWorkspace(c, 'Duplicates');
+  const base = `http://127.0.0.1:${site.port}`;
+  const first = await c.req('POST', `/workspaces/${wsId}/websites`, { url: base + '/', kind: 'original', auto_scan: false });
+  assert.equal(first.status, 201);
+  for (const variant of [base, base + '/?utm=1', base + '/#frag', base.replace('http://', 'HTTP://')]) {
+    const again = await c.req('POST', `/workspaces/${wsId}/websites`, { url: variant, kind: 'original', auto_scan: false });
+    assert.equal(again.status, 409, `${variant} must be recognised as the same website`);
+  }
+  site.srv.close();
+});
+
+test('normalisation ignores scheme and www for duplicate detection', () => {
+  const { domainOf } = require('../src/ssrf');
+  assert.equal(domainOf('https://www.Example.com/a?b=1'), domainOf('http://example.com/'));
+  assert.equal(domainOf('HTTP://EXAMPLE.COM/'), 'example.com');
+});
+
+test('a competitor cannot be the site under review', async () => {
+  await ready();
+  const site = await startSite({ '/': ['text/html', page('Home')] });
+  const c = client();
+  const wsId = await newWorkspace(c, 'Self pair');
+  await c.req('POST', `/workspaces/${wsId}/websites`, { url: `http://127.0.0.1:${site.port}/`, kind: 'original', auto_scan: false });
+  const same = await c.req('POST', `/workspaces/${wsId}/websites`, { url: `http://127.0.0.1:${site.port}`, kind: 'comparison' });
+  assert.equal(same.status, 409, 'same domain must not register as a competitor');
+  site.srv.close();
+});
+
+test('two concurrent adds create exactly one scan', async () => {
+  await ready();
+  const orig = await startSite({ '/': ['text/html', page('Home', '<p>' + COPIED + '</p>')] });
+  const c1 = await startSite({ '/': ['text/html', page('Copy', '<p>' + COPIED + '</p>')] });
+  const c2 = await startSite({ '/': ['text/html', page('Other', '<p>unrelated words here</p>')] });
+  const c = client();
+  const wsId = await newWorkspace(c, 'Race');
+  await c.req('POST', `/workspaces/${wsId}/websites`, { url: `http://127.0.0.1:${orig.port}`, kind: 'original', auto_scan: false });
+  const [a, b] = await Promise.all([
+    c.req('POST', `/workspaces/${wsId}/websites`, { url: `http://127.0.0.1:${c1.port}`, kind: 'comparison' }),
+    c.req('POST', `/workspaces/${wsId}/websites`, { url: `http://127.0.0.1:${c2.port}`, kind: 'comparison' })
+  ]);
+  assert.equal(a.status, 201);
+  assert.equal(b.status, 201);
+  const modes = [a.data.initial_scan.mode, b.data.initial_scan.mode].sort();
+  assert.deepEqual(modes, ['already_scanned', 'scan'], 'only one request may start the free scan');
+  const scans = await c.req('GET', `/workspaces/${wsId}/scans`);
+  assert.equal(scans.data.scans.length, 1, 'exactly one scan job');
+  orig.srv.close(); c1.srv.close(); c2.srv.close();
+});
+
+test('an unreachable site fails the scan with a readable reason, not a hang', async () => {
+  await ready();
+  const c = client();
+  const wsId = await newWorkspace(c, 'Unreachable');
+  const probeSrv = http.createServer((req, res) => res.end('ok'));
+  await new Promise((r) => probeSrv.listen(0, '127.0.0.1', r));
+  const deadPort = probeSrv.address().port;
+  await new Promise((r) => probeSrv.close(r));
+  await c.req('POST', `/workspaces/${wsId}/websites`, { url: `http://127.0.0.1:${deadPort}/`, kind: 'original', auto_scan: false });
+  const added = await c.req('POST', `/workspaces/${wsId}/websites`, { url: 'http://127.0.0.1:1/', kind: 'comparison' });
+  assert.equal(added.data.initial_scan.mode, 'scan');
+  let scan = null;
+  for (let i = 0; i < 40; i += 1) {
+    const list = await c.req('GET', `/workspaces/${wsId}/scans`);
+    scan = (list.data.scans || [])[0];
+    if (scan && ['completed', 'failed'].includes(scan.status)) break;
+    await sleep(200);
+  }
+  assert.equal(scan.status, 'failed');
+  assert.ok(scan.error && scan.error.length > 10, 'failure must explain itself');
+});

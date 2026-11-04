@@ -63,6 +63,15 @@ router.post('/workspaces/:workspaceId/websites', requireWorkspace(), rateLimit({
   const dup = db.prepare('SELECT id FROM websites WHERE workspace_id=? AND kind=? AND normalized_domain=?').get(req.workspace.id, kind, parsed.domain);
   if (dup) return res.status(409).json({ error: `This ${kind} website is already registered.` });
 
+  // A competitor that normalises to the site you are checking would pair a site
+  // with itself, which can only produce noise. Refuse it at creation.
+  if (kind === 'comparison') {
+    const original = db.prepare(`SELECT normalized_domain FROM websites WHERE workspace_id=? AND kind='original' AND status!='paused'`).get(req.workspace.id);
+    if (original && original.normalized_domain === parsed.domain) {
+      return res.status(409).json({ error: 'That is the same site you are checking. Add the other website you want to compare against.' });
+    }
+  }
+
   const id = newId('web');
   const now = utcNow();
   db.prepare(`INSERT INTO websites (id, workspace_id, kind, submitted_url, normalized_domain, label, status, crawl_status, created_at, updated_at)
