@@ -16,6 +16,7 @@ const db = require('./db/index');
 const scanner = require('./scanner');
 const discover = require('./discover');
 const search = require('./search');
+const credits = require('./credits');
 const { newId, utcNow } = require('./util');
 const { recoverStaleScans } = require('./scan-recovery');
 
@@ -31,19 +32,19 @@ function pickComparison(workspaceId, excludeId, excludeDomain) {
     LIMIT 1`).get(workspaceId, excludeId, excludeDomain || '');
 }
 
-function queueScan(workspaceId, originalId, comparisonId, userId) {
+function queueScan(workspaceId, originalId, comparisonId, userId, jobId) {
   const id = newId('scn');
   const params = JSON.stringify({ recrawl: false });
   const now = utcNow();
   // INSERT ... SELECT ... WHERE NOT EXISTS is one atomic statement in both SQLite
   // and PostgreSQL, so two concurrent requests cannot both create the free scan.
-  const res = db.prepare(`INSERT INTO scans (id, workspace_id, original_website_id, comparison_website_id, status, params, created_by, created_at)
-    SELECT ?,?,?,?, 'queued', ?, ?, ?
+  const res = db.prepare(`INSERT INTO scans (id, workspace_id, original_website_id, comparison_website_id, status, params, created_by, created_at, job_id)
+    SELECT ?,?,?,?, 'queued', ?, ?, ?, ?
     WHERE NOT EXISTS (
       SELECT 1 FROM scans
       WHERE workspace_id=? AND (original_website_id=? OR comparison_website_id=?)
         AND status IN ('queued','running','completed')
-    )`).run(id, workspaceId, originalId, comparisonId, params, userId, now,
+    )`).run(id, workspaceId, originalId, comparisonId, params, userId, now, jobId || null,
     workspaceId, originalId, originalId);
   if (!res || res.changes < 1) return null;
   scanner.enqueueScan(id);
@@ -120,13 +121,23 @@ function start({ workspaceId, siteId, userId }) {
     if (active) {
       return { mode: 'scan', started: true, reused: true, scan_id: active, comparison_url: comparison.submitted_url };
     }
-    const scanId = queueScan(workspaceId, original.id, comparison.id, userId);
+    const job = credits.openJob({
+      userId, workspaceId, kind: 'manual', requestKey: `scan:${original.id}:${comparison.id}`
+    });
+    if (!job.ok && !job.replay) {
+      if (job.conflict) {
+        return { mode: 'busy', started: false, message: 'A scan is already running. Its results will appear here when it finishes.' };
+      }
+      return { mode: 'no_credits', started: false, message: 'All 3 free scans are used. Add nothing further - your existing results are below.' };
+    }
+    const scanId = queueScan(workspaceId, original.id, comparison.id, userId, job.jobId);
     if (!scanId) {
       // Another request created the free scan between the read and the write.
       const existing = db.prepare(`SELECT id FROM scans WHERE workspace_id=? AND (original_website_id=? OR comparison_website_id=?) ORDER BY created_at ASC LIMIT 1`).get(workspaceId, original.id, original.id);
       return { mode: 'already_scanned', started: false, scan_id: existing ? existing.id : null, message: 'This website already has its scan, so nothing new was started.' };
     }
-    return { mode: 'scan', started: true, scan_id: scanId, comparison_url: comparison.submitted_url };
+    if (job.jobId) credits.attachScan(job.jobId, scanId);
+    return { mode: 'scan', started: true, scan_id: scanId, job_id: job.jobId, comparison_url: comparison.submitted_url };
   }
 
   let searchAvailable = false;

@@ -1,0 +1,13 @@
+{
+  "_comment": "Exact-match disposable/free-disposable mailbox providers. Never add a bare registrable domain shared with real inboxes. Contributions are reviewed, not auto-merged.",
+  "domains": [
+    "mailinator.com", "mailinator.net", "mailinator2.com", "guerrillamail.com", "guerrillamail.net",
+    "guerrillamail.org", "sharklasers.com", "grr.la", "spam4.me", "10minutemail.com",
+    "10minutemail.net", "temp-mail.org", "temp-mail.io", "tempmail.com", "tempmail.net",
+    "throwawaymail.com", "yopmail.com", "yopmail.net", "getnada.com", "nada.email",
+    "dispostable.com", "trashmail.com", "trashmail.de", "mytemp.email", "maildrop.cc",
+    "mailnesia.com", "spamgourmet.com", "fakeinbox.com", "throwam.com", "emailondeck.com",
+    "moakt.com", "mintemail.com", "burnermail.io", "tempr.email", "discard.email",
+    "mailsac.com", "inboxkitten.com", "anonaddy.me", "simplelogin.co", "33mail.com"
+  ]
+}

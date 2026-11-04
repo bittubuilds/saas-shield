@@ -3,6 +3,7 @@ const express = require('express');
 const search = require('../search');
 const db = require('../db/index');
 const discover = require('../discover');
+const credits = require('../credits');
 const { requireAuth, requireWorkspace, audit, rateLimit } = require('../auth');
 const { newId, utcNow } = require('../util');
 
@@ -41,11 +42,21 @@ router.post('/workspaces/:workspaceId/discover', requireWorkspace(), createLimit
   const active = db.prepare(`SELECT id FROM discoveries WHERE original_website_id=? AND status IN ('queued','running')`).get(orig.id);
   if (active) return res.status(409).json({ error: 'A discovery run for this website is already running.', discovery_id: active.id });
 
+  // One credit covers the whole discovery run, however many competitors it finds.
+  const job = credits.openJob({
+    userId: req.user.id, workspaceId: req.workspace.id, kind: 'discovery', requestKey: `discovery:${orig.id}`
+  });
+  if (!job.ok) {
+    if (job.replay) return res.status(200).json({ replay: true, job_id: job.jobId });
+    if (job.conflict) return res.status(409).json({ error: 'You already have a scan running. Wait for it to finish.', code: 'job_active', job_id: job.jobId });
+    return res.status(402).json({ error: 'You have used all 3 free scans.', code: 'no_credits', credits: job.balance });
+  }
+
   const id = newId('dsc');
   const now = utcNow();
-  db.prepare(`INSERT INTO discoveries (id, workspace_id, original_website_id, status, created_by, created_at, updated_at)
-              VALUES (?,?,?, 'queued', ?, ?, ?)`)
-    .run(id, req.workspace.id, orig.id, req.user.id, now, now);
+  db.prepare(`INSERT INTO discoveries (id, workspace_id, original_website_id, status, created_by, created_at, updated_at, job_id)
+              VALUES (?,?,?, 'queued', ?, ?, ?, ?)`)
+    .run(id, req.workspace.id, orig.id, req.user.id, now, now, job.jobId);
   audit(req.workspace.id, req.user.id, 'discovery.created', { id, original_website_id: orig.id });
   discover.enqueueDiscovery(id);
   res.status(202).json({ discovery: { id, status: 'queued' } });

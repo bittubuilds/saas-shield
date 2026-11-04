@@ -201,14 +201,19 @@ async function runDiscovery(discoveryId, opts = {}) {
       if (active) { registered.push({ url: u, scan_id: active, already: true }); continue; }
       const scanId = newId('scn');
       const params = { recrawl: true, maxPages: 10, maxDepth: 1, discovered: true };
-      db.prepare(`INSERT INTO scans (id, workspace_id, original_website_id, comparison_website_id, status, params, created_by, created_at)
-                  VALUES (?,?,?,?, 'queued', ?, ?, ?)`)
-        .run(scanId, d.workspace_id, original.id, siteId, JSON.stringify(params), d.created_by || null, utcNow());
+      db.prepare(`INSERT INTO scans (id, workspace_id, original_website_id, comparison_website_id, status, params, created_by, created_at, job_id)
+                  VALUES (?,?,?,?, 'queued', ?, ?, ?, ?)`)
+        .run(scanId, d.workspace_id, original.id, siteId, JSON.stringify(params), d.created_by || null, utcNow(), d.job_id || null);
       scanner.enqueueScan(scanId);
       createdScans++;
       registered.push({ url: u, scan_id: scanId, already: false });
     }
 
+    if (createdScans === 0 && d.job_id) {
+      // Nothing was queued, so this job bought nothing: settle it (refund) now
+      // rather than leaving a reserved credit hanging.
+      try { require('./credits').settleJob(d.job_id); } catch (e) { console.error('[discover] settle failed:', e.message); }
+    }
     db.prepare(`UPDATE discoveries SET status='completed', provider=?, queries=?, found_hosts=?, created_scan_count=?, finished_at=?, updated_at=? WHERE id=?`)
       .run(
         search.isSearchConfigured() ? 'serper' : (opts.searchFn ? 'test' : 'none'),

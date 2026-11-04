@@ -192,11 +192,13 @@ async function runScan(scanId) {
 
     db.prepare(`UPDATE scans SET status='completed', pages_compared=?, findings=?, finished_at=? WHERE id=?`)
       .run(pairsCompared, findings, utcNow(), scanId);
-    audit(scan.workspace_id, null, 'scan.completed', { scanId, pairsCompared, findings });
+    require('./credits').settleJob(scan.job_id);
+  audit(scan.workspace_id, null, 'scan.completed', { scanId, pairsCompared, findings });
   } catch (e) {
     const cancelled = e.code === 'CANCELLED';
     db.prepare(`UPDATE scans SET status=?, error=?, finished_at=? WHERE id=?`)
       .run(cancelled ? 'cancelled' : 'failed', cancelled ? 'Cancelled by user' : e.message, utcNow(), scanId);
+    try { require('./credits').settleJob(scan.job_id); } catch (err) { console.error('[scanner] settle failed:', err.message); }
     audit(scan.workspace_id, null, cancelled ? 'scan.cancelled' : 'scan.failed', { scanId, error: cancelled ? null : e.message });
   } finally {
     running.delete(scanId);

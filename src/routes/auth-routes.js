@@ -11,6 +11,8 @@ const {
 const verify = require('../verify');
 const email = require('../email');
 const oauth = require('../oauth');
+const credits = require('../credits');
+const disposable = require('../disposable');
 
 const router = express.Router();
 const OAUTH_COOKIE = 'shield_oauth';
@@ -207,6 +209,15 @@ router.post('/signup', authLimiter, express.json({ limit: '16kb' }), async (req,
     return res.status(201).json(generic);
   }
 
+  const disposableCheck = disposable.check(normEmail);
+  if (disposableCheck.block) {
+    logAuthEvent({ email: normEmail, userId: null, ip: req.ip, action: 'signup', outcome: 'disposable_blocked' });
+    return res.status(400).json({ error: 'Please sign up with a permanent email address - disposable inboxes are not accepted.' });
+  }
+  if (disposableCheck.warn) {
+    logAuthEvent({ email: normEmail, userId: null, ip: req.ip, action: 'signup', outcome: 'disposable_warned' });
+  }
+
   const userId = newId('usr');
   const wsId = newId('wsp');
   const now = utcNow();
@@ -222,6 +233,9 @@ router.post('/signup', authLimiter, express.json({ limit: '16kb' }), async (req,
     db.prepare('INSERT INTO users (id, email, password_hash, name, created_at, email_verified_at, email_verified_source) VALUES (?,?,?,?,?,?,?)')
       .run(userId, normEmail, passwordHash, null, now, instantVerifiedAt, instantSource);
     db.prepare('INSERT INTO workspaces (id, name, created_at) VALUES (?,?,?)').run(wsId, wsName, now);
+    // Exactly one grant of 3 credits per user account. grantOnce is idempotent, so
+    // a retried signup cannot hand out a second helping.
+    credits.grantOnce(userId, 'signup');
     db.prepare('INSERT INTO memberships (workspace_id, user_id, role, created_at) VALUES (?,?,?,?)')
       .run(wsId, userId, 'owner', now);
     db.prepare(`INSERT INTO notification_settings
@@ -231,6 +245,8 @@ router.post('/signup', authLimiter, express.json({ limit: '16kb' }), async (req,
     db.exec('COMMIT');
   } catch (e) {
     try { db.exec('ROLLBACK'); } catch { /* already rolled back */ }
+    // A silent 500 here hides real schema problems; log the cause, never the body.
+    console.error('[auth] signup failed:', e.message);
     return res.status(500).json({ error: 'Could not create the account.' });
   }
 

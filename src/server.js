@@ -16,6 +16,7 @@ const alertRoutes = require('./routes/alert-routes');
 const internalRoutes = require('./routes/internal-routes');
 const webhookRoutes = require('./routes/webhook-routes');
 const discoverRoutes = require('./routes/discover-routes');
+const creditRoutes = require('./routes/credit-routes');
 
 const app = express();
 app.disable('x-powered-by');
@@ -90,6 +91,7 @@ app.use('/api', workspaceRoutes);
 app.use('/api', monitorRoutes);
 app.use('/api', alertRoutes);
 app.use('/api', discoverRoutes);
+app.use('/api', creditRoutes);
 
 // API 404 + error handling
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));

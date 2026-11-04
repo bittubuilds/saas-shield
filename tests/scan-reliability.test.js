@@ -85,6 +85,15 @@ function seedWorkspace() {
   return wsId;
 }
 
+function seedUserWithCredits() {
+  const credits = require('../src/credits');
+  const userId = newId('usr');
+  db.prepare('INSERT INTO users (id,email,password_hash,name,created_at,email_verified_at,email_verified_source) VALUES (?,?,?,?,?,?,?)')
+    .run(userId, `${userId}@example.test`, 'x', null, utcNow(), utcNow(), 'instant_mode');
+  credits.ensure(userId);
+  return userId;
+}
+
 function seedSite(wsId, url, kind = 'original') {
   const id = newId('web');
   const now = utcNow();
@@ -121,6 +130,7 @@ test('a scan whose site times out ends failed, not running', async () => {
   const dead = await startSite({ '/robots.txt': ['text/plain', 'User-agent: *\nAllow: /\n'] });
   const wsId = seedWorkspace();
   const original = seedSite(wsId, `http://127.0.0.1:${dead.port}/`);
+  const uid = seedUserWithCredits();
   const comparison = seedSite(wsId, 'http://127.0.0.1:1/', 'comparison');
 
   const scanId = newId('scn');
@@ -207,6 +217,7 @@ test('an orphaned running scan is recovered, keeps its history and frees the fre
   const other = await serve({ '/': html(page('Copy', '<p>copied passage words here</p>')) });
   const wsId = seedWorkspace();
   const original = seedSite(wsId, site.base + '/');
+  const uid = seedUserWithCredits();
   const comparison = seedSite(wsId, other.base + '/', 'comparison');
 
   const old = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -221,7 +232,7 @@ test('an orphaned running scan is recovered, keeps its history and frees the fre
   assert.ok(row.finished_at, 'finish time recorded');
 
   // and the user can still use their one scan
-  initialScan.start({ workspaceId: wsId, siteId: original, userId: null });
+  initialScan.start({ workspaceId: wsId, siteId: original, userId: uid });
   const fresh = db.prepare(`SELECT COUNT(*) AS n FROM scans WHERE workspace_id=? AND status IN ('queued','running')`).get(wsId);
   assert.equal(fresh.n, 1, 'exactly one fresh scan after recovery');
 });
@@ -230,6 +241,7 @@ test('a scan that is still inside the window is never touched', async () => {
   const site = await startSite({ '/': ['text/html', page('Home', '<p>home</p>')] });
   const wsId = seedWorkspace();
   const original = seedSite(wsId, `http://127.0.0.1:${site.port}/`);
+  const uid = seedUserWithCredits();
   const comparison = seedSite(wsId, 'http://127.0.0.1:1/', 'comparison');
   const active = seedScan(wsId, original, comparison, 'running', new Date(Date.now() - 60 * 1000).toISOString());
 
@@ -242,6 +254,7 @@ test('recovery does not create replacement jobs', async () => {
   const site = await startSite({ '/': ['text/html', page('Home', '<p>home</p>')] });
   const wsId = seedWorkspace();
   const original = seedSite(wsId, `http://127.0.0.1:${site.port}/`);
+  const uid = seedUserWithCredits();
   const comparison = seedSite(wsId, 'http://127.0.0.1:1/', 'comparison');
   const before = db.prepare('SELECT COUNT(*) AS n FROM scans WHERE workspace_id=?').get(wsId).n;
   seedScan(wsId, original, comparison, 'queued', new Date(Date.now() - 3600 * 1000).toISOString());
@@ -260,6 +273,7 @@ test('a cancelled scan keeps its record and reason, and does not block a retry',
   const other = await serve({ '/': html(page('Copy', '<p>copied words here now</p>')) });
   const wsId = seedWorkspace();
   const original = seedSite(wsId, site.base + '/');
+  const uid = seedUserWithCredits();
   const comparison = seedSite(wsId, other.base + '/', 'comparison');
 
   // A scan the user cancelled earlier today.
@@ -270,7 +284,7 @@ test('a cancelled scan keeps its record and reason, and does not block a retry',
     .run(cancelledId, wsId, original, comparison, earlier, earlier, earlier);
 
   // The one-time scan is still available.
-  const again = initialScan.start({ workspaceId: wsId, siteId: original, userId: null });
+  const again = initialScan.start({ workspaceId: wsId, siteId: original, userId: uid });
   assert.equal(again.mode, 'scan', 'a cancelled scan must not consume the free scan');
   assert.equal(again.started, true);
 
@@ -305,9 +319,10 @@ test('cancelling a live scan records the reason and frees the allowance', async 
   const other = await serve({ '/': html(page('Copy', '<p>other copy words here</p>')) });
   const wsId = seedWorkspace();
   const original = seedSite(wsId, slow.base + '/');
+  const uid = seedUserWithCredits();
   const comparison = seedSite(wsId, other.base + '/', 'comparison');
 
-  const started = initialScan.start({ workspaceId: wsId, siteId: original, userId: null });
+  const started = initialScan.start({ workspaceId: wsId, siteId: original, userId: uid });
   assert.equal(started.mode, 'scan');
 
   // Cancel as soon as the worker has the job.
@@ -328,7 +343,7 @@ test('cancelling a live scan records the reason and frees the allowance', async 
   assert.equal(row.error, 'Cancelled by user');
 
   // A deliberate retry is allowed and the cancelled row stays in history.
-  const retry = initialScan.start({ workspaceId: wsId, siteId: original, userId: null });
+  const retry = initialScan.start({ workspaceId: wsId, siteId: original, userId: uid });
   assert.equal(retry.mode, 'scan');
   const total = db.prepare('SELECT COUNT(*) AS n FROM scans WHERE workspace_id=?').get(wsId);
   assert.equal(total.n, 2);

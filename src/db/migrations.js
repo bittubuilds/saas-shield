@@ -493,5 +493,58 @@ module.exports = [
       CREATE INDEX idx_email_outbox_created ON email_outbox(created_at DESC);
       CREATE INDEX idx_email_outbox_msg ON email_outbox(provider_message_id);
     `
+  },
+  {
+    version: 8,
+    name: 'scan-job-credits-per-user',
+    sql: `
+      -- Credits belong to the user, not the workspace: a second workspace must not
+      -- mint credits, and an invited member spends their own balance.
+      CREATE TABLE IF NOT EXISTS user_credits (
+        user_id TEXT PRIMARY KEY,
+        granted INTEGER NOT NULL DEFAULT 3,
+        backfill_version INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      );
+
+      -- One row per scan job. A job is what a credit buys: a manual comparison or
+      -- a whole discovery run that fans out across several competitors.
+      CREATE TABLE IF NOT EXISTS scan_jobs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('manual','discovery')),
+        request_key TEXT NOT NULL,
+        credit_state TEXT NOT NULL DEFAULT 'reserved'
+          CHECK (credit_state IN ('reserved','consumed','refunded')),
+        status TEXT NOT NULL DEFAULT 'queued'
+          CHECK (status IN ('queued','running','completed','failed','cancelled')),
+        created_at TEXT NOT NULL,
+        finished_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_scan_jobs_user ON scan_jobs(user_id, created_at DESC);
+      -- At most one live job per user, enforced by the database rather than by a read.
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_scan_jobs_one_active
+        ON scan_jobs(user_id) WHERE status IN ('queued','running');
+
+      -- Append-only. UNIQUE(user_id, job_id, entry_type) is what makes a duplicate
+      -- consume or refund physically impossible.
+      CREATE TABLE IF NOT EXISTS credit_ledger (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        job_id TEXT NOT NULL,
+        entry_type TEXT NOT NULL CHECK (entry_type IN ('grant','reserve','consume','refund')),
+        amount INTEGER NOT NULL,
+        reason TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_ledger_unique
+        ON credit_ledger(user_id, job_id, entry_type);
+      CREATE INDEX IF NOT EXISTS idx_credit_ledger_user ON credit_ledger(user_id, created_at DESC);
+
+      ALTER TABLE scans ADD COLUMN job_id TEXT;
+      CREATE INDEX IF NOT EXISTS idx_scans_job ON scans(job_id);
+      ALTER TABLE discoveries ADD COLUMN job_id TEXT;
+    `
   }
 ];
