@@ -192,6 +192,29 @@ async function crawlSite(website, onPage, opts = {}) {
   const seenHashes = new Set();     // content dedupe
   const queue = [{ url: normalizeUrl(website.submitted_url), depth: 0 }];
   const errors = [];
+
+  // Seeds from the site's own robots.txt + sitemaps, including sitemap indexes.
+  // Without this a page that is not linked from the homepage is never scanned,
+  // which is exactly the case for sitemap-driven sites. Discovery never throws and
+  // never leaves the site's host; the page/depth caps still apply below.
+  try {
+    const sitemapDiscovery = require('./sitemap');
+    const found = await sitemapDiscovery.discoverFromSitemaps(website.submitted_url);
+    const seedHost = new URL(normalizeUrl(website.submitted_url)).host;
+    let added = 0;
+    for (const u of (found.urls || [])) {
+      if (added >= maxPages) break;
+      try {
+        if (new URL(u).host !== seedHost) continue;
+        const key = normalizeUrl(u);
+        if (seen.has(key)) continue;
+        queue.push({ url: key, depth: 1 });
+        added += 1;
+      } catch { /* skip malformed */ }
+    }
+  } catch (e) {
+    errors.push({ url: website.submitted_url, error: `sitemap discovery: ${e.message}`, code: 'SITEMAP' });
+  }
   let stored = 0;
   let startedAt = Date.now();
 

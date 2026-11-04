@@ -163,4 +163,9 @@ if (!config.monitor.frequencies.includes(config.monitor.defaultFrequencyHours)) 
 
 require('./authmode').apply(config);
 
+// A scan that has not finished within this window is treated as orphaned by a
+// crashed process and recovered. Cancellation and long crawls of big sites stay
+// well inside it; override with SCAN_STALE_AFTER_MINUTES.
+config.scan = { staleAfterMs: num(env.SCAN_STALE_AFTER_MINUTES, 15) * 60 * 1000 };
+
 module.exports = config;

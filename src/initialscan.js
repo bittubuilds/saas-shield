@@ -17,6 +17,7 @@ const scanner = require('./scanner');
 const discover = require('./discover');
 const search = require('./search');
 const { newId, utcNow } = require('./util');
+const { recoverStaleScans } = require('./scan-recovery');
 
 // Pick a site to compare against: a real comparison site first, then any other
 // active site in the workspace. Paused sites are skipped - the scan route would
@@ -62,6 +63,8 @@ function queueDiscovery(workspaceId, originalId, userId) {
 // Decide what the automatic next step is and start it. Returns a description of
 // what was actually started, so the UI can say something true immediately.
 function start({ workspaceId, siteId, userId }) {
+  // An orphaned scan from a crashed process must not eat the one free scan.
+  try { recoverStaleScans(); } catch (e) { console.error('[initialscan] recovery failed:', e.message); }
   const site = db.prepare('SELECT * FROM websites WHERE id=? AND workspace_id=?').get(siteId, workspaceId);
   if (!site) return { mode: 'missing', started: false };
   if (site.status === 'paused') {
@@ -83,9 +86,13 @@ function start({ workspaceId, siteId, userId }) {
 
   // The free plan is a single scan per website, so an original that has already
   // been scanned - running or finished - never triggers another automatically.
+  // Only a live or finished scan counts as "already used". A failed or cancelled
+  // scan must not burn the free scan, otherwise one bad competitor URL would lock
+  // the user out of their own website forever.
   const priorScan = db.prepare(`
     SELECT id, status FROM scans
     WHERE workspace_id=? AND (original_website_id=? OR comparison_website_id=?)
+      AND status IN ('queued','running','completed')
     ORDER BY created_at ASC LIMIT 1`).get(workspaceId, original.id, original.id);
   if (priorScan) {
     return {
