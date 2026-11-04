@@ -183,12 +183,53 @@ function authView(mode = 'signin') {
   </div>`;
 }
 
+
+// One panel, three real numbers: pages we read, scan state, findings. Everything
+// is read back from the server; when the scan ends the panel stops polling.
+function initialScanPanel() {
+  let siteId = null;
+  try { siteId = sessionStorage.getItem('shield.lastAddedSite'); } catch { /* private mode */ }
+  if (!siteId) return '';
+  return `<div class="card" id="initPanel" data-site="${esc(siteId)}" style="margin-bottom:16px;">
+    <div class="card-head"><h3>Your first scan</h3><span class="small muted" id="initMode">checking…</span></div>
+    <div id="initBody" class="small muted">Reading the website…</div>
+  </div>`;
+}
+
+async function pollInitialScan() {
+  const panel = elid('initPanel');
+  if (!panel) return;
+  const siteId = panel.dataset.site;
+  let out = null;
+  try { out = await api(`/workspaces/${wsId}/websites/${siteId}/initial-scan`); } catch { return; }
+  const body = elid('initBody');
+  const mode = elid('initMode');
+  if (!body || !mode) return;
+  const scan = out.scan || null;
+  const stages = [
+    ['Website registered', true, out.website ? out.website.submitted_url : ''],
+    ['Pages read', out.pages_discovered > 0, `${out.pages_discovered || 0} page${(out.pages_discovered || 0) === 1 ? '' : 's'}`],
+    ['Scan', !!scan, scan ? scan.status : (out.next_step || 'not started')],
+    ['Findings', (out.findings || 0) > 0, `${out.findings || 0} potential match${(out.findings || 0) === 1 ? '' : 'es'}`]
+  ];
+  mode.textContent = scan ? scan.status : 'one-time scan';
+  body.innerHTML = `<div class="progress">${stages.map(([label, done, detail]) =>
+    `<div class="step-row"><span class="dot ${done ? 'on' : ''}"></span><span class="step-label">${esc(label)}</span><span class="step-detail">${esc(String(detail || ''))}</span></div>`).join('')}</div>
+    ${out.findings > 0 ? `<div class="cta-row" style="margin-top:12px;"><a class="btn sm" href="#/results">View results</a></div>` : ''}
+    ${out.next_step && !scan ? `<p class="hint" style="margin:10px 0 0;">${esc(out.next_step)}</p>` : ''}`;
+  if (scan && (scan.status === 'completed' || scan.status === 'failed')) {
+    clearInterval(window.__initPoll);
+    try { sessionStorage.removeItem('shield.lastAddedSite'); } catch { /* private mode */ }
+  }
+}
+
 async function dashboardView() {
   const d = await api(`/workspaces/${wsId}/dashboard`);
   const started = sessionStorage.getItem('shield.addedSite') || '';
   const kpi = (num, label, tone) => `<div class="kpi${tone ? ' ' + tone : ''}"><div class="num">${num}</div><div class="lbl">${label}</div></div>`;
   const recent = d.recent_results || [];
   return `
+  ${initialScanPanel()}
   <div class="page-head">
     <div>
       <h1>Dashboard</h1>
@@ -711,22 +752,22 @@ async function handleSiteForm(e) {
   try {
     const created = await api(`/workspaces/${wsId}/websites`, { method: 'POST', body: { url, kind, label } });
     const site = (created && (created.website || created)) || {};
-    // Automatic next step for the site the user just added: the existing discovery
-    // job searches for pages that overlap with it and queues a scan for each hit.
-    // Nothing is faked: if search is unconfigured or refused, we surface that.
-    let auto = '';
-    if (kind === 'original' && site.id) {
-      try {
-        await api(`/workspaces/${wsId}/discover`, { method: 'POST', body: { original_website_id: site.id } });
-        auto = ' Automatic checking has started.';
-      } catch (err) {
-        auto = err.message && /search/i.test(err.message)
-          ? ' Automatic checking needs a search provider on this deployment, so add a comparison website and start a scan yourself.'
-          : ' We could not start the automatic check just now - open Scans to start one.';
-      }
+    const init = (created && created.initial_scan) || null;
+    // The server already started the one-time scan (or told us why it could not).
+    // We only report what it said - no invented progress.
+    let note = '';
+    if (init) {
+      if (init.mode === 'scan') note = ' Your first scan has started.';
+      else if (init.mode === 'discovery') note = ' Looking for pages that overlap with yours.';
+      else if (init.mode === 'already_scanned') note = ' This site already had its free scan.';
+      else if (init.message) note = ' ' + init.message;
     }
+    try {
+      if (site.id) sessionStorage.setItem('shield.lastAddedSite', site.id);
+      if (site.submitted_url) sessionStorage.setItem('shield.addedSite', site.submitted_url);
+    } catch { /* private mode */ }
     try { sessionStorage.setItem('shield.addedSite', site.submitted_url || url); } catch { /* private mode */ }
-    toast('Website added.' + auto, 'success');
+    toast('Website added.' + note, init && init.started ? 'success' : undefined);
     location.hash = '#/dashboard';
     render();
   } catch (err) { errEl.textContent = err.message; }
@@ -1205,6 +1246,12 @@ function bindPage(hash) {
       render();
     } catch (err) { showError(err); }
   }));
+  if (elid('initPanel')) {
+    clearInterval(window.__initPoll);
+    pollInitialScan();
+    window.__initPoll = setInterval(pollInitialScan, 4000);
+  }
+
   const addBtn = elid('addSiteBtn');
   if (addBtn) addBtn.addEventListener('click', () => {
     const f = elid('addSiteForm');
