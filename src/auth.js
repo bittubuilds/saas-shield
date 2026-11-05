@@ -138,6 +138,9 @@ function sweepBuckets(now) {
 }
 
 function rateLimit({ limit, windowMs, bucket }) {
+  // `limit` may be a number or a getter, so a deployment (or a test) can change the
+  // budget without rebuilding the middleware.
+  const limitNow = () => (typeof limit === 'function' ? limit() : limit);
   return (req, res, next) => {
     const ip = req.ip || 'unknown';
     const key = `${bucket}:${ip}`;
@@ -149,13 +152,22 @@ function rateLimit({ limit, windowMs, bucket }) {
       buckets.set(key, b);
     }
     b.count++;
-    if (b.count > limit) {
+    if (b.count > limitNow()) {
       res.set('Retry-After', String(Math.ceil((b.start + windowMs - now) / 1000)));
       return res.status(429).json({ error: 'Too many requests. Try again shortly.' });
     }
     next();
   };
 }
+
+rateLimit.reset = (bucket) => {
+  if (!bucket) { buckets.clear(); return 0; }
+  let cleared = 0;
+  for (const key of [...buckets.keys()]) {
+    if (key.startsWith(`${bucket}:`)) { buckets.delete(key); cleared += 1; }
+  }
+  return cleared;
+};
 
 // --------------------------------------------------------------------------
 // Persistent auth event log + rate limiting that survives a restart.

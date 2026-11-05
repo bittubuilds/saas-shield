@@ -172,7 +172,7 @@ config.scan = { staleAfterMs: num(env.SCAN_STALE_AFTER_MINUTES, 15) * 60 * 1000 
 // rather than bans. The limiter is per-process by design for this MVP.
 config.signup = {
   disposablePolicy: env.SIGNUP_BLOCK_DISPOSABLE === 'true' ? 'block' : (env.SIGNUP_DISPOSABLE_POLICY || 'warn'),
-  rateLimit: num(env.SIGNUP_RATE_LIMIT, 5),
+  rateLimit: num(env.SIGNUP_RATE_LIMIT, 20),
   rateWindowMs: num(env.SIGNUP_RATE_WINDOW_MS, 60 * 60 * 1000)
 };
 config.credits = {

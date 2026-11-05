@@ -15,6 +15,7 @@
 
 const db = require('./db/index');
 const { newId, utcNow } = require('./util');
+const config = require('./config');
 
 const GRANT = 3;
 const TERMINAL_SCAN = ['completed', 'failed', 'cancelled'];
@@ -105,6 +106,40 @@ function jobForRequest(userId, requestKey) {
                      ORDER BY created_at DESC LIMIT 1`).get(userId, requestKey);
 }
 
+// A process that dies between the reservation and the job-row insert would hold a
+// credit forever, because there is no job for settleJob to settle. The mirror case
+// - a job row whose reservation never landed - would squat the one-active-job slot
+// while spending nothing. Both are recovered here, and only when old enough that no
+// live request could still be mid-flight.
+function recoverOrphanReservations({ olderThanMs } = {}) {
+  const windowMs = Number.isFinite(olderThanMs) ? olderThanMs : config.scan.staleAfterMs;
+  const cutoff = new Date(Date.now() - windowMs).toISOString();
+  let refunded = 0;
+  let freed = 0;
+
+  const heldCredits = db.prepare(`
+    SELECT l.user_id, l.job_id FROM credit_ledger l
+     WHERE l.entry_type='reserve' AND l.created_at < ?
+       AND NOT EXISTS (SELECT 1 FROM scan_jobs j WHERE j.id = l.job_id)
+       AND NOT EXISTS (SELECT 1 FROM credit_ledger r
+                        WHERE r.user_id=l.user_id AND r.job_id=l.job_id AND r.entry_type='refund')`).all(cutoff);
+  for (const row of heldCredits) {
+    if (release(row.user_id, row.job_id, 'refund', 'Reservation recovered: the job never started')) refunded += 1;
+  }
+
+  const unchargedJobs = db.prepare(`
+    SELECT j.id FROM scan_jobs j
+     WHERE j.credit_state='reserved' AND j.created_at < ?
+       AND NOT EXISTS (SELECT 1 FROM credit_ledger l WHERE l.job_id = j.id AND l.entry_type='reserve')`).all(cutoff);
+  for (const job of unchargedJobs) {
+    const moved = db.prepare(`UPDATE scan_jobs SET credit_state='refunded', status='failed', finished_at=?
+                              WHERE id=? AND credit_state='reserved'`).run(utcNow(), job.id);
+    if ((moved && moved.changes) === 1) freed += 1;
+  }
+  if (refunded || freed) console.warn(`[credits] recovered ${refunded} held reservation(s), freed ${freed} uncharged job(s)`);
+  return { refunded, freed, cutoff };
+}
+
 // Outcome shapes returned to routes, so each caller can answer precisely:
 //   { ok:true, jobId, replay:false }
 //   { ok:true, jobId, replay:true }        identical request already running
@@ -112,6 +147,7 @@ function jobForRequest(userId, requestKey) {
 //   { ok:false, noCredits:true, balance }  balance is zero
 function openJob({ userId, workspaceId, kind, requestKey }) {
   ensure(userId);
+  try { recoverOrphanReservations(); } catch (e) { console.error('[credits] recovery failed:', e.message); }
   const sameRequest = jobForRequest(userId, requestKey);
   if (sameRequest) return { ok: true, jobId: sameRequest.id, replay: true, job: sameRequest };
 
@@ -176,6 +212,21 @@ function settleJob(jobId) {
   return { settled: true, state, completed, scans: scans.length };
 }
 
+// A job can end without ever queueing a comparison (discovery found nobody, the
+// route failed after reserving). settleJob cannot infer that on its own - a job
+// with zero scans might still be about to attach one - so callers say so
+// explicitly and the reserved credit goes back.
+function failJob(jobId, reason = 'The job ended before any comparison ran.') {
+  const job = db.prepare('SELECT * FROM scan_jobs WHERE id=?').get(jobId);
+  if (!job) return { settled: false, reason: 'missing' };
+  if (job.credit_state !== 'reserved') return { settled: false, reason: 'already_' + job.credit_state };
+  const moved = db.prepare(`UPDATE scan_jobs SET credit_state='refunded', status='failed', finished_at=?
+                            WHERE id=? AND credit_state='reserved'`).run(utcNow(), jobId);
+  if (!(moved && moved.changes === 1)) return { settled: false, reason: 'lost_race' };
+  release(job.user_id, jobId, 'refund', reason);
+  return { settled: true, state: 'refunded' };
+}
+
 function settleJobsForScans(scanIds) {
   const out = [];
   for (const id of scanIds) {
@@ -197,5 +248,5 @@ function ledgerFor(userId, limit = 50) {
 
 module.exports = {
   GRANT, ensure, wallet, grantOnce, balance, reserve, release, openJob, attachScan,
-  settleJob, settleJobsForScans, activeJob, jobForRequest, listJobs, ledgerFor, jobScans
+  settleJob, failJob, settleJobsForScans, activeJob, recoverOrphanReservations, jobForRequest, listJobs, ledgerFor, jobScans
 };

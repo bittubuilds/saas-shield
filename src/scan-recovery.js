@@ -32,6 +32,10 @@ function recoverStaleScans({ olderThanMs, now = new Date() } = {}) {
      WHERE status IN ('queued','running')
        AND COALESCE(started_at, created_at) < ?`).run(now.toISOString(), INTERRUPTED, cutoff);
   const recovered = (res && res.changes) || 0;
+  // A crash can also leave a credit held with no job behind it, or a job row with
+  // no reservation. Both are invisible to the scan update above.
+  try { require('./credits').recoverOrphanReservations({ olderThanMs: window_ }); }
+  catch (e) { console.error('[recovery] credit recovery failed:', e.message); }
 
   // An interrupted job bought nothing, so its credit goes back (settleJob refunds
   // when no comparison completed; it is idempotent).

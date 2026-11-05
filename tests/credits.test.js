@@ -28,7 +28,17 @@ async function ready() {
   if (!server.listening) await new Promise((r) => server.once('listening', r));
   BASE = `http://127.0.0.1:${server.address().port}/api`;
 }
-after(() => new Promise((r) => server.close(r)));
+after(async () => {
+  // The suite enqueues real scans, so stop the scheduler timers before closing the
+  // listener or node:test waits on handles it cannot see.
+  try { require('../src/scheduler').stop(); } catch { /* not started */ }
+  // fetch keeps sockets alive; without this, close() waits on idle connections
+  if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+  await new Promise((r) => server.close(r));
+  // This file's scans leave the global fetch agent's sockets parked; node:test runs
+  // each file in its own child process, so exiting here only ends this file.
+  setTimeout(() => process.exit(0), 250).unref();
+});
 
 function client() {
   let cookie = '';
@@ -48,6 +58,10 @@ function client() {
 }
 
 let userSeq = 0;
+// Tests create many accounts from a single loopback IP, so lift the signup budget
+// for the suite; the cap test below sets it back deliberately.
+require('../src/config').signup.rateLimit = 10000;
+
 async function account(label = 'credits') {
   await ready();
   const c = client();
@@ -237,6 +251,18 @@ function seedWebsites(tag) {
   return { wsId, a: `web_a_${tag}`, b: `web_b_${tag}` };
 }
 
+function seedWebsitePair(wsId) {
+  const mk = (kind, url) => {
+    const id = newId('web');
+    const now = utcNow();
+    db.prepare(`INSERT INTO websites (id, workspace_id, kind, submitted_url, normalized_domain, status, crawl_status, created_at, updated_at)
+                VALUES (?,?,?,?,?,'active','not_crawled',?,?)`)
+      .run(id, wsId, kind, url, new URL(url).host, now, now);
+    return id;
+  };
+  return [mk('original', `https://orig-${Date.now()}.example.test/`), mk('comparison', `https://comp-${Date.now()}.example.test/`)];
+}
+
 function seedJob(userId, statuses) {
   const sites = seedWebsites(String(Math.random()).slice(2, 8));
   credits.ensure(userId);
@@ -350,4 +376,157 @@ test('disposable detection is conservative and normalised', async () => {
   assert.equal(disposable.isDisposable('founder@proton.me'), false);
   assert.equal(disposable.normalise('WWW.Example.COM.'), 'example.com');
   assert.equal(disposable.mode(), 'warn', 'default policy warns rather than blocks');
+});
+
+// --- final verification: crash windows, recovery, authorization, limits ------
+
+test('a reservation with no job behind it is recovered and refunded', async () => {
+  await ready();
+  const a = await account('orphan-reserve');
+  const before = credits.balance(a.userId).available;
+  const ghostJob = newId('job');
+  assert.equal(credits.reserve(a.userId, ghostJob), true, 'the hold itself succeeds');
+  assert.equal(credits.balance(a.userId).available, before - 1);
+  // Simulate the crash: the job row is never written, and time has passed.
+  db.prepare('UPDATE credit_ledger SET created_at=? WHERE job_id=?').run(
+    new Date(Date.now() - 60 * 60 * 1000).toISOString(), ghostJob);
+
+  const res = credits.recoverOrphanReservations();
+  assert.ok(res.refunded >= 1, 'the held credit must come back');
+  assert.equal(credits.balance(a.userId).available, before, 'balance restored');
+  const again = credits.recoverOrphanReservations();
+  assert.equal(again.refunded, 0, 'recovery is not repeatable');
+});
+
+test('an uncharged job row cannot squat the active-job slot', async () => {
+  await ready();
+  const a = await account('orphan-job');
+  const staleJobId = newId('job');
+  db.prepare(`INSERT INTO scan_jobs (id,user_id,workspace_id,kind,request_key,credit_state,status,created_at)
+              VALUES (?,?,?,?,'*','reserved','queued',?)`)
+    .run(staleJobId, a.userId, a.ws, 'manual', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+  assert.ok(credits.activeJob(a.userId), 'the orphan occupies the slot');
+
+  credits.recoverOrphanReservations();
+  assert.equal(credits.activeJob(a.userId), undefined, 'slot is free again');
+
+  const fresh = credits.openJob({ userId: a.userId, workspaceId: a.ws, kind: 'manual', requestKey: 'fresh' });
+  assert.equal(fresh.ok, true, 'a real job can start');
+});
+
+test('a consumed job is never refunded by stale recovery', async () => {
+  await ready();
+  const a = await account('consumed-vs-recovery');
+  const [origId, compId] = seedWebsitePair(a.ws);
+  const job = credits.openJob({ userId: a.userId, workspaceId: a.ws, kind: 'manual', requestKey: 'pair:consumed' });
+  const scanId = newId('scn');
+  db.prepare(`INSERT INTO scans (id,workspace_id,original_website_id,comparison_website_id,status,params,created_at,job_id)
+              VALUES (?,?,?,?,'completed','{}',?,?)`)
+    .run(scanId, a.ws, origId, compId, utcNow(), job.jobId);
+  credits.settleJob(job.jobId);
+  const settled = credits.balance(a.userId);
+
+  // A stale, orphaned running scan elsewhere must not reach into that job.
+  const strayScan = newId('scn');
+  db.prepare(`INSERT INTO scans (id,workspace_id,original_website_id,comparison_website_id,status,params,created_at,job_id,started_at)
+              VALUES (?,?,?,?,'running','{}',?,?,?)`)
+    .run(strayScan, a.ws, origId, compId,
+      new Date(Date.now() - 7200000).toISOString(), job.jobId,
+      new Date(Date.now() - 7200000).toISOString());
+
+  require('../src/scan-recovery').recoverStaleScans();
+  const after = credits.balance(a.userId);
+  assert.equal(after.available, settled.available, 'no refund for a consumed job');
+  assert.equal(after.refunded, settled.refunded, 'no refund row appeared');
+});
+
+test('a refunded job can never be consumed later', async () => {
+  await ready();
+  const a = await account('refunded-locked');
+  const job = credits.openJob({ userId: a.userId, workspaceId: a.ws, kind: 'manual', requestKey: 'pair:refunded' });
+  // A job that never queued a comparison is refunded explicitly.
+  const first = credits.failJob(job.jobId, 'no comparisons queued');
+  assert.equal(first.state, 'refunded');
+  const second = credits.settleJob(job.jobId);
+  const third = credits.failJob(job.jobId, 'again');
+  assert.equal(second.settled, false);
+  assert.equal(second.reason, 'already_refunded');
+  assert.equal(third.settled, false, 'a second refund attempt is a no-op');
+  const consumes = db.prepare("SELECT COUNT(*) c FROM credit_ledger WHERE job_id=? AND entry_type='consume'").get(job.jobId).c;
+  assert.equal(consumes, 0, 'no consume row may appear after a refund');
+  assert.equal(credits.balance(a.userId).available, 3, 'still three credits');
+});
+
+test('repeated refunds stay idempotent', async () => {
+  await ready();
+  const a = await account('double-refund');
+  const job = credits.openJob({ userId: a.userId, workspaceId: a.ws, kind: 'manual', requestKey: 'pair:double' });
+  assert.equal(credits.release(a.userId, job.jobId, 'refund', 'first'), true);
+  assert.equal(credits.release(a.userId, job.jobId, 'refund', 'second'), false, 'second refund refused');
+  const rows = db.prepare("SELECT COUNT(*) c FROM credit_ledger WHERE job_id=? AND entry_type='refund'").get(job.jobId).c;
+  assert.equal(rows, 1, 'exactly one refund row');
+});
+
+test('credits are not readable through another workspace, and members spend their own', async () => {
+  await ready();
+  const owner = await account('owner-credits');
+  const member = await account('member-credits');
+
+  // A stranger cannot reach the owner's balance, whatever workspace id they send.
+  const strangerView = await member.c.req('GET', `/workspaces/${owner.ws}/credits`);
+  assert.ok([403, 404].includes(strangerView.status), `cross-workspace read must fail, got ${strangerView.status}`);
+  const selfView = await member.c.req('GET', '/credits');
+  assert.equal(selfView.status, 200);
+  assert.equal(selfView.data.available, 3, 'the member sees their own balance');
+  assert.ok(!JSON.stringify(selfView.data).includes(owner.userId), 'no other user id leaks');
+
+  // Invite the member into the owner's workspace and have them start a scan there.
+  const inv = await owner.c.req('POST', `/workspaces/${owner.ws}/members`, { email: member.email, role: 'member' });
+  assert.equal(inv.status, 201, JSON.stringify(inv.data));
+  const site = await serve({ '/': html(`<p>${SHARED}</p>`) });
+  const orig = await owner.c.req('POST', `/workspaces/${owner.ws}/websites`, { url: site.base + '/', kind: 'original', auto_scan: false });
+  const other = await serve({ '/': html(`<p>${SHARED}</p>`) });
+  const comp = await owner.c.req('POST', `/workspaces/${owner.ws}/websites`, { url: other.base + '/', kind: 'comparison', auto_scan: false });
+
+  const scan = await member.c.req('POST', `/workspaces/${owner.ws}/scans`, {
+    original_website_id: orig.data.website.id, comparison_website_id: comp.data.website.id
+  });
+  assert.equal(scan.status, 202, JSON.stringify(scan.data));
+  assert.ok(credits.balance(member.userId).available < 3, 'the member paid');
+  assert.equal(credits.balance(owner.userId).available, 3, 'the owner did not');
+});
+
+test('signup is capped per IP by the configurable signup budget', async () => {
+  await ready();
+  const config = require('../src/config');
+  const { rateLimit } = require('../src/auth');
+  config.signup.rateLimit = 3;
+  rateLimit.reset('signup');
+  const limit = config.signup.rateLimit;
+  const c = client();
+  let last = null;
+  let blocked = null;
+  for (let i = 0; i < limit + 2; i += 1) {
+    last = await c.req('POST', '/auth/signup', {
+      email: `cap-${Date.now()}-${i}@example.test`, password: 'Credit!test1', workspace_name: 'Cap'
+    });
+    if (last.status === 429) { blocked = last; break; }
+  }
+  assert.ok(blocked, `expected a 429 within ${limit + 1} signups, last status ${last && last.status}`);
+  // The HTTP helper does not surface headers, so check the cooldown contract on
+  // the middleware itself: a 429 must carry Retry-After.
+  const { rateLimit: limiterFactory } = require('../src/auth');
+  const stub = limiterFactory({ limit: () => 0, windowMs: 60000, bucket: 'signup-cooldown-probe' });
+  let headerName = null; let headerValue = null;
+  const fakeRes = {
+    set: (k, v) => { headerName = k; headerValue = v; },
+    status(code) { this.code = code; return this; },
+    json() { return this; }
+  };
+  stub({ ip: '198.51.100.7' }, fakeRes, () => {});
+  assert.equal(fakeRes.code, 429);
+  assert.equal(headerName, 'Retry-After');
+  assert.ok(Number(headerValue) > 0, 'Retry-After carries seconds');
+  config.signup.rateLimit = 10000;
+  rateLimit.reset('signup');
 });

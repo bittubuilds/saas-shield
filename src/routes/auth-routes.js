@@ -27,6 +27,14 @@ const authLimiter = rateLimit({
   bucket: 'auth'
 });
 
+// Signup has its own, tighter per-IP budget. It existed in config but was not
+// wired to a route, so every signup was only covered by the looser auth limiter.
+const signupLimiter = rateLimit({
+  limit: () => config.signup.rateLimit,
+  windowMs: config.signup.rateWindowMs,
+  bucket: 'signup'
+});
+
 // Sign-in attempts are limited per email+IP in the database as well, so a
 // restart cannot be used to reset a brute-force budget.
 const signinLimiter = persistentRateLimit({
@@ -174,7 +182,7 @@ router.get('/config', (req, res) => {
 // ---------------------------------------------------------------------------
 // Sign up
 // ---------------------------------------------------------------------------
-router.post('/signup', authLimiter, express.json({ limit: '16kb' }), async (req, res) => {
+router.post('/signup', signupLimiter, authLimiter, express.json({ limit: '16kb' }), async (req, res) => {
   const { email: rawEmail, password, workspace_name } = req.body || {};
   const normEmail = validEmail(rawEmail) ? rawEmail.trim().toLowerCase() : null;
   if (!normEmail) return res.status(400).json({ error: 'A valid email address is required.' });
