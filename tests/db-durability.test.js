@@ -222,9 +222,10 @@ test('two processes migrating the same sqlite file at once both succeed', async 
   const rows = check.prepare('SELECT version FROM schema_migrations ORDER BY version').all();
   const tables = check.prepare("SELECT COUNT(*) c FROM sqlite_master WHERE type='table'").get();
   check.close();
-  assert.deepEqual(rows.map((r) => Number(r.version)), [1, 2, 3, 4, 5, 6, 7, 8], 'each migration recorded once');
-  // 30 domain tables + schema_migrations, counted on a database built from empty.
-  assert.equal(Number(tables.c), 31, 'schema applied exactly once (30 domain tables + schema_migrations)');
+  assert.deepEqual(rows.map((r) => Number(r.version)), require('../src/db/migrations').map((m) => m.version), 'each migration recorded once');
+  // counted from the migrations themselves, so a new migration cannot silently
+  // drift away from what this asserts.
+  assert.equal(Number(tables.c), (() => { const s = new Set(); for (const m of require('../src/db/migrations')) for (const x of String(m.sql || '').matchAll(/CREATE TABLE (?:IF NOT EXISTS )?([a-z_]+)/gi)) s.add(x[1].toLowerCase()); return s.size + 1; })(), 'schema applied exactly once (DDL tables + schema_migrations)');
 });
 
 test('two processes migrating the same postgres database at once both succeed', async (t) => {

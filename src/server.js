@@ -95,6 +95,7 @@ app.use('/api', websiteRoutes.router);
 app.use('/api', scanRoutes);
 app.use('/api', resultRoutes);
 app.use('/api', reportRoutes);
+app.use('/api', require('./routes/ai-routes'));
 app.use('/api', workspaceRoutes);
 app.use('/api', monitorRoutes);
 app.use('/api', alertRoutes);

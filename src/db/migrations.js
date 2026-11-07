@@ -593,5 +593,88 @@ module.exports = [
       CREATE INDEX IF NOT EXISTS idx_cev_competitor ON competitor_evidence(competitor_id);
       CREATE INDEX IF NOT EXISTS idx_cev_ws ON competitor_evidence(workspace_id);
     `
+  },
+  {
+    version: 9,
+    name: 'ai-intelligence-engine',
+    sql: `
+      CREATE TABLE IF NOT EXISTS ai_analyses (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        competitor_id TEXT NOT NULL,
+        scan_id TEXT,
+        stage TEXT NOT NULL,
+        status TEXT NOT NULL,
+        input_hash TEXT NOT NULL,
+        provider TEXT,
+        model TEXT,
+        analysis_version INTEGER NOT NULL,
+        prompt_version INTEGER NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        tokens_in INTEGER,
+        tokens_out INTEGER,
+        error TEXT,
+        started_at TEXT,
+        finished_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_analyses_unique
+        ON ai_analyses(competitor_id, stage, input_hash, analysis_version);
+      CREATE INDEX IF NOT EXISTS idx_ai_analyses_scan ON ai_analyses(scan_id, stage);
+      CREATE INDEX IF NOT EXISTS idx_ai_analyses_workspace ON ai_analyses(workspace_id, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS ai_findings (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        competitor_id TEXT,
+        scan_id TEXT,
+        analysis_id TEXT,
+        kind TEXT NOT NULL,
+        statement TEXT NOT NULL,
+        detail TEXT,
+        claim TEXT NOT NULL,
+        confidence REAL,
+        evidence_ids TEXT NOT NULL,
+        source_urls TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ai_findings_comp ON ai_findings(competitor_id, kind);
+      CREATE INDEX IF NOT EXISTS idx_ai_findings_scan ON ai_findings(scan_id, kind);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_findings_dedupe
+        ON ai_findings(analysis_id, kind, statement);
+
+      CREATE TABLE IF NOT EXISTS ai_usage (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        scan_id TEXT,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        requests INTEGER NOT NULL DEFAULT 0,
+        tokens_in INTEGER NOT NULL DEFAULT 0,
+        tokens_out INTEGER NOT NULL DEFAULT 0,
+        day TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ai_usage_scan ON ai_usage(scan_id);
+      CREATE INDEX IF NOT EXISTS idx_ai_usage_day ON ai_usage(day);
+
+      CREATE TABLE IF NOT EXISTS ai_reports (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        scan_id TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        provider TEXT,
+        model TEXT,
+        analysis_version INTEGER NOT NULL,
+        competitors TEXT NOT NULL,
+        evidence_snapshot TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_reports_version ON ai_reports(scan_id, version);
+      CREATE INDEX IF NOT EXISTS idx_ai_reports_workspace ON ai_reports(workspace_id, created_at DESC);
+    `
   }
 ];

@@ -247,7 +247,7 @@ test('the competitor profile of the user site comes from its own pages', () => {
 
 // --- PostgreSQL compatibility ----------------------------------------------
 
-test('migration 8 and the competitor tables work on PostgreSQL too', { skip: !process.env.TEST_DATABASE_URL }, () => {
+test('every migration and the competitor tables work on PostgreSQL too', { skip: !process.env.TEST_DATABASE_URL }, () => {
   const out = execFileSync(process.execPath, ['-e', `
     const db = require('./src/db/index');
     const store = require('./src/competitor/store');
@@ -262,7 +262,7 @@ test('migration 8 and the competitor tables work on PostgreSQL too', { skip: !pr
     console.log(JSON.stringify({ migrations: Number(mig.v), competitors: rows.length, domain: rows[0].domain }));
   `], { cwd: REPO, env: { ...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL, DATABASE_FILE: '' }, encoding: 'utf8' });
   const parsed = JSON.parse(out.trim().split('\n').pop());
-  assert.equal(parsed.migrations, 8);
+  assert.equal(parsed.migrations, require('../src/db/migrations').length);
   assert.equal(parsed.competitors, 1);
   assert.equal(parsed.domain, 'pg.example');
 });
