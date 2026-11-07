@@ -33,8 +33,13 @@ function migrate() {
   );
   for (const m of MIGRATIONS) {
     if (applied.has(m.version)) continue;
-    db.exec('BEGIN');
+    // BEGIN IMMEDIATE takes the write lock up front. A second process starting at
+    // the same moment waits (busy_timeout) instead of both deciding to migrate,
+    // and the re-check below means the loser sees the row and skips it.
+    db.exec('BEGIN IMMEDIATE');
     try {
+      const done = db.prepare('SELECT 1 AS e FROM schema_migrations WHERE version=?').get(m.version);
+      if (done) { db.exec('COMMIT'); continue; }
       db.exec(m.sql);
       db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?,?,?)')
         .run(m.version, m.name, nowIso());

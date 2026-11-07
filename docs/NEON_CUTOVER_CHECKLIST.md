@@ -70,3 +70,28 @@ already define, and nothing in the old SQLite is mutated.
 - No schema reset: `schema_migrations` stays intact so future migrations apply cleanly.
 - No deletion of SQLite files.
 - No merge of `feat/db-durability` without approval.
+
+## One-deployment reality check
+
+A single Render deploy cannot prove both storage modes, because the backend is chosen
+by whether `DATABASE_URL` exists in that environment at boot. There is no in-process
+stage that shows SQLite and then switches.
+
+Safest sequence with exactly one production deploy:
+
+1. Prove the new code on SQLite **locally** (`npm test` plus `npm start`), and prove it
+   on PostgreSQL **locally** (`tools/e2e-postgres.js`) - both already done and recorded.
+2. Set `DATABASE_URL` **before** the single deploy, together with `DB_REQUIRE_DURABLE=true`.
+   That flag makes the process refuse to start on non-durable storage instead of quietly
+   running on an empty container database.
+3. Deploy once. Gate A then either passes immediately or the service fails loudly at
+   boot instead of serving an empty app.
+
+Trade-off, stated plainly: with `DB_REQUIRE_DURABLE=true` a bad connection string becomes
+a failed deploy rather than a page that loads with no data. If you prefer a rolling check,
+leave the flag unset and rely on `/api/health` reporting `durable: true`; the cost is that
+a misconfiguration looks healthy until someone notices empty tables.
+
+Rollback is not "remove DATABASE_URL". On this plan that returns to an ephemeral SQLite
+file, which is empty after the next deploy. Real rollback: `tools/db-restore.js` from a
+verified logical backup, or a Neon branch/time-travel restore.

@@ -16,7 +16,7 @@ if (process.env.DATABASE_URL) {
   backend = 'postgres';
   console.log(`[db] PostgreSQL backend: ${db.label}`);
   try {
-    applyMigrations(db);
+    applyMigrations(db, { lock: true });
     postMigrate(db, config);
   } catch (e) {
     console.error('[db] PostgreSQL migration failed:', e.message);

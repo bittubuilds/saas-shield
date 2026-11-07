@@ -33,10 +33,12 @@ function migrationVersion() {
 
 function tableCount() {
   try {
-    const row = db.prepare('SELECT COUNT(*) c FROM schema_migrations').get();
+    const row = db.backendKind === 'postgres'
+      ? db.prepare("SELECT COUNT(*) c FROM information_schema.tables WHERE table_schema='public'").get()
+      : db.prepare("SELECT COUNT(*) c FROM sqlite_master WHERE type='table'").get();
     return row ? Number(row.c) : 0;
   } catch {
-    return 0;
+    return null;
   }
 }
 

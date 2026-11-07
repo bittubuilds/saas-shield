@@ -134,3 +134,23 @@ Background recovery after restart: a scan left `running` with a 1-hour-old `star
 The durability *problem* is well understood and the *tools to fix it* are built and tested. What has not changed is where production data actually lives — that stays ephemeral until someone provisions PostgreSQL and sets the environment variable, which requires credentials I do not have and an approval I do not have.
 
 So: the app can now tell you it is about to lose your data, and can move the data safely when you are ready. It cannot yet make the data durable on its own.
+
+## Post-review hardening (7 Nov)
+
+Three defects were found reviewing this work against the code rather than the report:
+
+1. **Concurrent migrations could crash a second instance.** `CREATE TABLE IF NOT
+   EXISTS schema_migrations` races in PostgreSQL: both sessions pass the existence
+   check and one fails on `pg_type`'s unique index. Bootstrap now retries once, which
+   means "the other process won".
+2. **Migration decisions were made before any lock existed.** The applied-set was read
+   outside the transaction, so two processes starting together could both decide to
+   apply migration 7. Each migration now takes `pg_advisory_xact_lock` (released by
+   COMMIT) and re-checks its own version inside the transaction. SQLite uses
+   `BEGIN IMMEDIATE` plus the same re-check, so the loser waits rather than duplicating.
+3. **`tables` in the health payload counted migrations, not tables.** It reported 7 on a
+   database with 27 tables. It now counts real tables per backend.
+
+Proven with independent OS processes, not sequential calls: two `node` processes
+migrating one fresh SQLite file and one fresh PostgreSQL database simultaneously both
+exit 0, record each migration exactly once, and produce 27 tables.

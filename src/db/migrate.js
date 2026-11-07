@@ -9,18 +9,40 @@ const MIGRATIONS = require('./migrations');
 
 function nowIso() { return new Date().toISOString(); }
 
-function applyMigrations(db, { log = console.log } = {}) {
-  db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+// Advisory lock key for migrations. Any process that wants to migrate takes this
+// lock inside the same transaction that applies the DDL, so two instances starting
+// together cannot interleave. It is released by COMMIT/ROLLBACK automatically.
+const MIGRATION_LOCK_NAMESPACE = 21842;
+const MIGRATION_LOCK_KEY = 7;
+
+function bootstrap(db) {
+  const ddl = `CREATE TABLE IF NOT EXISTS schema_migrations (
       version INTEGER PRIMARY KEY,
       name TEXT NOT NULL,
       applied_at TEXT NOT NULL
-    )`);
+    )`;
+  // CREATE TABLE IF NOT EXISTS still races in PostgreSQL: two sessions can both
+  // pass the existence check and one then fails on pg_type's unique index. That
+  // failure means the other process won and the table now exists, so retry once.
+  for (let attempt = 0; ; attempt += 1) {
+    try { db.exec(ddl); return; } catch (e) {
+      if (attempt >= 1 || !/duplicate key|already exists/i.test(e.message)) throw e;
+    }
+  }
+}
+
+function applyMigrations(db, { log = console.log, lock = false } = {}) {
+  bootstrap(db);
   const applied = new Set(db.prepare('SELECT version FROM schema_migrations').all().map((r) => Number(r.version)));
   let count = 0;
   for (const m of MIGRATIONS) {
     if (applied.has(m.version)) continue;
     db.exec('BEGIN');
     try {
+      // Whoever gets here first wins; the loser waits, then sees the row and skips.
+      if (lock) db.prepare('SELECT pg_advisory_xact_lock(?, ?)').get(MIGRATION_LOCK_NAMESPACE, MIGRATION_LOCK_KEY);
+      const done = db.prepare('SELECT 1 AS e FROM schema_migrations WHERE version=?').get(m.version);
+      if (done) { db.exec('COMMIT'); continue; }
       db.exec(m.sql);
       db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?,?,?)')
         .run(m.version, m.name, nowIso());

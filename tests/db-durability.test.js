@@ -172,3 +172,58 @@ test('the health probe never leaks the connection string', () => {
   const text = JSON.stringify(probed);
   assert.doesNotMatch(text, /postgres:\/\/|password|@127\.0\.0\.1/i);
 });
+
+// --- concurrent migration: two independent processes, one fresh database ------
+
+const { spawn } = require('node:child_process');
+
+// Real concurrency needs two processes started at the same time, so this uses
+// spawn + Promise.all rather than sequential execFileSync.
+function childAsync(script, env) {
+  return new Promise((resolve) => {
+    const p = spawn(process.execPath, ['-e', script], {
+      cwd: REPO,
+      env: { ...process.env, DB_BACKUP_DIR: BACKUP_DIR, ...env }
+    });
+    let out = '';
+    let err = '';
+    p.stdout.on('data', (d) => { out += d; });
+    p.stderr.on('data', (d) => { err += d; });
+    p.on('close', (code) => resolve({ code, out, err }));
+  });
+}
+
+const MIGRATE_SNIPPET = "require('./src/db/index'); console.log('migrated');";
+
+test('two processes migrating the same sqlite file at once both succeed', async () => {
+  const file = path.join(TMP, 'race.db');
+  const runs = await Promise.all([
+    childAsync(MIGRATE_SNIPPET, { DATABASE_FILE: file }),
+    childAsync(MIGRATE_SNIPPET, { DATABASE_FILE: file })
+  ]);
+  for (const r of runs) {
+    assert.equal(r.code, 0, `a concurrent migrator failed: ${r.err.split('\n').slice(-3).join(' ')}`);
+  }
+  const { DatabaseSync } = require('node:sqlite');
+  const check = new DatabaseSync(file, { readOnly: true });
+  const rows = check.prepare('SELECT version FROM schema_migrations ORDER BY version').all();
+  const tables = check.prepare("SELECT COUNT(*) c FROM sqlite_master WHERE type='table'").get();
+  check.close();
+  assert.deepEqual(rows.map((r) => Number(r.version)), [1, 2, 3, 4, 5, 6, 7], 'each migration recorded once');
+  assert.equal(Number(tables.c), 27, 'schema applied exactly once (26 domain tables + schema_migrations)');
+});
+
+test('two processes migrating the same postgres database at once both succeed', async (t) => {
+  const url = process.env.TEST_DATABASE_URL;
+  if (!url) return t.skip('TEST_DATABASE_URL not set');
+  const runs = await Promise.all([
+    childAsync(MIGRATE_SNIPPET, { DATABASE_URL: url }),
+    childAsync(MIGRATE_SNIPPET, { DATABASE_URL: url })
+  ]);
+  for (const r of runs) {
+    assert.equal(r.code, 0, `a concurrent migrator failed: ${r.err.split('\n').slice(-3).join(' ')}`);
+  }
+  const pgBackup = require('../src/db/backup');
+  const counts = pgBackup.rowCounts();
+  assert.ok(counts.schema_migrations >= 7, 'migration rows recorded');
+});
