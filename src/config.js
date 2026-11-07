@@ -84,6 +84,19 @@ const config = {
     respectRobots: bool(env.CRAWL_RESPECT_ROBOTS, true)
   },
 
+  // Phase 4 competitor intelligence collection. Bounded by design: a competitor
+  // costs at most maxPages fetches, and no single page type may take the whole
+  // budget. These are read at call time so tests and operators can tune them.
+  competitorIntel: {
+    maxPages: num(env.CINT_MAX_PAGES, 12),
+    maxPerType: num(env.CINT_MAX_PAGES_PER_TYPE, 3),
+    maxTextChars: num(env.CINT_MAX_TEXT_CHARS, 20000),
+    staleAfterMs: num(env.CINT_STALE_AFTER_MINUTES, 20) * 60 * 1000,
+    // A pricing page is required evidence for a price statement; without one the
+    // competitor's price stays unknown rather than being guessed from a homepage.
+    pageTypes: ['homepage', 'pricing', 'features', 'product', 'docs', 'about', 'blog']
+  },
+
   ssrf: {
     // Only for local development and automated tests. Production must keep false.
     allowPrivateIps: bool(env.SHIELD_ALLOW_PRIVATE_IPS, false)

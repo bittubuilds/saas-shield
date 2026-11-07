@@ -100,6 +100,7 @@ app.use('/api', workspaceRoutes);
 app.use('/api', monitorRoutes);
 app.use('/api', alertRoutes);
 app.use('/api', discoverRoutes);
+app.use('/api', require('./routes/competitor-routes'));
 
 // API 404 + error handling
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));

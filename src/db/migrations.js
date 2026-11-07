@@ -676,5 +676,139 @@ module.exports = [
       CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_reports_version ON ai_reports(scan_id, version);
       CREATE INDEX IF NOT EXISTS idx_ai_reports_workspace ON ai_reports(workspace_id, created_at DESC);
     `
+  },
+  {
+    version: 10,
+    name: 'competitor-intelligence-collection',
+    sql: `
+      -- Phase 4: collected page content and structured intelligence.
+      -- Pages gain the fetch metadata needed to explain a partial crawl, plus the
+      -- text the extractors read (bounded, never the raw HTML).
+      ALTER TABLE competitor_pages ADD COLUMN relevance_score REAL;
+      ALTER TABLE competitor_pages ADD COLUMN discovery_source TEXT;
+      ALTER TABLE competitor_pages ADD COLUMN depth INTEGER;
+      ALTER TABLE competitor_pages ADD COLUMN final_url TEXT;
+      ALTER TABLE competitor_pages ADD COLUMN title TEXT;
+      ALTER TABLE competitor_pages ADD COLUMN text_content TEXT;
+      ALTER TABLE competitor_pages ADD COLUMN text_chars INTEGER;
+      ALTER TABLE competitor_pages ADD COLUMN fetched_bytes INTEGER;
+      ALTER TABLE competitor_pages ADD COLUMN duplicate_of TEXT;
+
+      -- One row per collection attempt. A run that died mid-flight is visible and
+      -- recoverable instead of leaving pages stuck in 'pending'.
+      CREATE TABLE IF NOT EXISTS competitor_crawls (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        competitor_id TEXT NOT NULL REFERENCES competitors(id) ON DELETE CASCADE,
+        scan_id TEXT,
+        status TEXT NOT NULL DEFAULT 'running'
+               CHECK (status IN ('running','completed','partial','failed')),
+        page_budget INTEGER,
+        pages_attempted INTEGER NOT NULL DEFAULT 0,
+        pages_ok INTEGER NOT NULL DEFAULT 0,
+        pages_failed INTEGER NOT NULL DEFAULT 0,
+        reason TEXT,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ccrawls_competitor ON competitor_crawls(competitor_id, started_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_ccrawls_ws ON competitor_crawls(workspace_id, status);
+
+      -- Extracted features. Append-only: a page that changes produces a new row,
+      -- so an old claim keeps the evidence it was extracted from.
+      CREATE TABLE IF NOT EXISTS competitor_features (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        competitor_id TEXT NOT NULL REFERENCES competitors(id) ON DELETE CASCADE,
+        page_id TEXT,
+        crawl_id TEXT,
+        source_url TEXT NOT NULL,
+        page_type TEXT NOT NULL,
+        identity_key TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        category TEXT,
+        claim_level TEXT NOT NULL
+                    CHECK (claim_level IN ('documented','marketing','inferred','unverified')),
+        confidence REAL,
+        verification_status TEXT NOT NULL DEFAULT 'observed'
+                            CHECK (verification_status IN ('observed','inferred','unverified')),
+        evidence_id TEXT,
+        evidence_excerpt TEXT,
+        content_hash TEXT,
+        observed_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_cfeat_competitor ON competitor_features(competitor_id, observed_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_cfeat_ws ON competitor_features(workspace_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_cfeat_dedupe
+        ON competitor_features(competitor_id, identity_key, content_hash);
+
+      -- Extracted plans. price_value is the number printed on the page; it is never
+      -- converted to another currency, and price_display keeps the original wording.
+      CREATE TABLE IF NOT EXISTS competitor_plans (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        competitor_id TEXT NOT NULL REFERENCES competitors(id) ON DELETE CASCADE,
+        page_id TEXT,
+        crawl_id TEXT,
+        source_url TEXT NOT NULL,
+        identity_key TEXT NOT NULL,
+        plan_name TEXT NOT NULL,
+        price_display TEXT,
+        price_value REAL,
+        currency TEXT,
+        currency_display TEXT,
+        billing_interval TEXT NOT NULL DEFAULT 'unknown'
+                CHECK (billing_interval IN ('month','year','week','day','one_time','custom','unknown')),
+        billing_note TEXT,
+        is_starting_price INTEGER NOT NULL DEFAULT 0,
+        price_stated INTEGER NOT NULL DEFAULT 0,
+        free_plan INTEGER,
+        trial_days INTEGER,
+        trial_display TEXT,
+        usage_based INTEGER,
+        enterprise_custom INTEGER,
+        limits TEXT,
+        plan_features TEXT,
+        original_text TEXT NOT NULL,
+        confidence REAL,
+        verification_status TEXT NOT NULL DEFAULT 'observed'
+                            CHECK (verification_status IN ('observed','inferred','unverified')),
+        evidence_id TEXT,
+        content_hash TEXT,
+        observed_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_cplan_competitor ON competitor_plans(competitor_id, observed_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_cplan_ws ON competitor_plans(workspace_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_cplan_dedupe
+        ON competitor_plans(competitor_id, identity_key, content_hash);
+
+      -- Current pricing answer per competitor. NULL means unknown: an absent price
+      -- is never turned into 0, and an absent free plan is never turned into 'paid'.
+      CREATE TABLE IF NOT EXISTS competitor_pricing (
+        competitor_id TEXT PRIMARY KEY REFERENCES competitors(id) ON DELETE CASCADE,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        crawl_id TEXT,
+        has_pricing_evidence INTEGER NOT NULL DEFAULT 0,
+        free_plan INTEGER,
+        free_trial INTEGER,
+        trial_days INTEGER,
+        trial_display TEXT,
+        starting_price_display TEXT,
+        starting_price_value REAL,
+        currency TEXT,
+        billing_interval TEXT,
+        usage_based INTEGER,
+        enterprise_custom INTEGER,
+        plans_count INTEGER NOT NULL DEFAULT 0,
+        source_url TEXT,
+        confidence REAL,
+        extracted_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_cpricing_ws ON competitor_pricing(workspace_id);
+    `
   }
 ];
