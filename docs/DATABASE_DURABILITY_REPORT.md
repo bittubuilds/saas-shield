@@ -154,3 +154,23 @@ Three defects were found reviewing this work against the code rather than the re
 Proven with independent OS processes, not sequential calls: two `node` processes
 migrating one fresh SQLite file and one fresh PostgreSQL database simultaneously both
 exit 0, record each migration exactly once, and produce 27 tables.
+
+## Release-candidate review (2026-11-07)
+
+Defects found and fixed:
+
+1. **SQLite restore could be silently undone.** `--swap` copied only the `.db` file
+   and left `-wal`/`-shm` in place, so the next open replayed the old WAL over the
+   restored file. Sidecars are now parked alongside the replaced file, the restore is
+   verified by opening the result and counting tables, and the previous file is kept
+   for rollback. Regression test added.
+2. **Restore verification opened the live database.** The CLI loaded the app's db
+   module (and therefore a connection) merely to verify a snapshot. The swap path now
+   inspects the snapshot on its own connection.
+3. **`DB_REQUIRE_DURABLE=true` behaviour is now proven**, not just documented:
+   ephemeral storage exits 1 with `DB_REQUIRE_DURABLE=true and the configured
+   database is not durable`; declaring `DB_PERSISTENT_PATH` starts normally with
+   `durable: true`.
+
+Test totals after the review: 139 tests, 139 pass with PostgreSQL, 138 pass + 1 skip
+(the PostgreSQL-gated case) without it.

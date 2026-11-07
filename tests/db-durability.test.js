@@ -227,3 +227,27 @@ test('two processes migrating the same postgres database at once both succeed', 
   const counts = pgBackup.rowCounts();
   assert.ok(counts.schema_migrations >= 7, 'migration rows recorded');
 });
+
+// --- the restore path operators will actually use ----------------------------
+
+test('sqlite --swap restore parks WAL sidecars and brings the snapshot back', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shield-swap-'));
+  const file = path.join(dir, 'live.db');
+  const snaps = path.join(dir, 'snaps');
+  fs.mkdirSync(snaps);
+  const env = { DATABASE_FILE: file, DB_BACKUP_DIR: snaps };
+  const run = (args) => execFileSync(process.execPath, args, { cwd: REPO, env: { ...process.env, ...env }, encoding: 'utf8' }).trim();
+
+  run(['-e', "const db=require('./src/db/index');const{newId,utcNow}=require('./src/util');db.prepare('INSERT INTO workspaces (id,name,created_at) VALUES (?,?,?)').run(newId('wsp'),'swap-ws',utcNow());"]);
+  run(['tools/db-backup.js']);
+  const snapshot = fs.readdirSync(snaps).find((f) => f.endsWith('.db'));
+  assert.ok(snapshot, 'a snapshot was written');
+
+  run(['-e', "const db=require('./src/db/index');db.prepare(\"DELETE FROM workspaces WHERE name='swap-ws'\").run();"]);
+  run(['tools/db-restore.js', path.join(snaps, snapshot), '--swap']);
+
+  const after = run(['-e', "const db=require('./src/db/index');console.log(Number(db.prepare('SELECT COUNT(*) c FROM workspaces').get().c));"]);
+  assert.equal(after, '1', 'the deleted row is back');
+  assert.equal(fs.existsSync(`${file}-wal`), false, 'no stale WAL left to replay over the restore');
+  assert.ok(fs.readdirSync(dir).some((f) => f.includes('.replaced-')), 'the previous file was kept for rollback');
+});

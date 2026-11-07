@@ -95,3 +95,31 @@ a misconfiguration looks healthy until someone notices empty tables.
 Rollback is not "remove DATABASE_URL". On this plan that returns to an ephemeral SQLite
 file, which is empty after the next deploy. Real rollback: `tools/db-restore.js` from a
 verified logical backup, or a Neon branch/time-travel restore.
+
+## Verified backup and recovery (free tier only)
+
+Verified from Neon's documentation on 2026-11-04, not assumed: **Free plan instant
+restore / PITR history window is up to 6 hours** (Launch 7 days, Scale 30 days).
+There is no traditional nightly snapshot on Free.
+
+Practical schedule that uses only what Free actually provides:
+
+| Layer | What | Command | Free? |
+|---|---|---|---|
+| 1 | Neon PITR, 6h window | restore via console or `neon branches create --parent main --timestamp <ISO>` | yes |
+| 2 | Manual pre-change snapshot | create a branch before risky operations | yes, counts toward 0.5 GB storage |
+| 3 | App-level logical backup | `node tools/db-backup.js` | yes, writes locally |
+
+Layer 3 must run somewhere durable (workstation or CI). On Render the filesystem is
+ephemeral, so a backup written there dies with the container. A GitHub Action that
+runs `db-backup.js` on a schedule and uploads the artifact is the documented option,
+but it is **not set up and not verified**; treat it as future work.
+
+### Restore drills (executed 2026-11-07, SQLite)
+
+```
+seed 1 row -> db-backup.js -> delete row -> restore --swap -> row count 1, 27 tables, migration 7
+```
+`--swap` moves the live file and its `-wal`/`-shm` sidecars aside, copies the
+snapshot, opens it and counts tables, and only then reports success. Leaving a stale
+WAL behind would replay the deleted rows back on top of the restore.
