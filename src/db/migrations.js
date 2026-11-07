@@ -493,5 +493,105 @@ module.exports = [
       CREATE INDEX idx_email_outbox_created ON email_outbox(created_at DESC);
       CREATE INDEX idx_email_outbox_msg ON email_outbox(provider_message_id);
     `
+  },
+  {
+    version: 8,
+    name: 'competitor-intelligence-foundation',
+    sql: `
+      -- Structured competitors. A row is only created when we actually saw the
+      -- site, so source_url and discovered_at are never guessed.
+      CREATE TABLE IF NOT EXISTS competitors (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        discovery_id TEXT,
+        website_id TEXT,
+        domain TEXT NOT NULL,
+        site_url TEXT NOT NULL,
+        name TEXT,
+        description TEXT,
+        category TEXT,
+        target_audience TEXT,
+        positioning TEXT,
+        relevance_score INTEGER,
+        relevance_breakdown TEXT,
+        status TEXT NOT NULL DEFAULT 'possible'
+                CHECK (status IN ('verified','possible','rejected','unverifiable')),
+        status_reason TEXT,
+        source_url TEXT,
+        discovery_source TEXT,
+        discovered_at TEXT NOT NULL,
+        created_by TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE (workspace_id, domain)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_competitors_ws ON competitors(workspace_id);
+      CREATE INDEX IF NOT EXISTS idx_competitors_status ON competitors(workspace_id, status);
+
+      -- One row per candidate per discovery run, kept even when the candidate is
+      -- rejected: knowing what was considered and why is part of the evidence.
+      CREATE TABLE IF NOT EXISTS competitor_discoveries (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        discovery_id TEXT,
+        competitor_id TEXT,
+        query TEXT,
+        result_url TEXT NOT NULL,
+        result_host TEXT NOT NULL,
+        search_rank INTEGER,
+        decision TEXT NOT NULL CHECK (decision IN ('verified','possible','rejected')),
+        score INTEGER,
+        score_breakdown TEXT,
+        reason TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_cdisc_ws ON competitor_discoveries(workspace_id);
+      CREATE INDEX IF NOT EXISTS idx_cdisc_competitor ON competitor_discoveries(competitor_id);
+
+      -- Pages we actually fetched for a competitor, with deterministic classification.
+      CREATE TABLE IF NOT EXISTS competitor_pages (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        competitor_id TEXT NOT NULL REFERENCES competitors(id) ON DELETE CASCADE,
+        url TEXT NOT NULL,
+        page_type TEXT NOT NULL DEFAULT 'other'
+                  CHECK (page_type IN ('homepage','product','features','pricing','docs','blog','about','other')),
+        classification_confidence REAL,
+        classification_reason TEXT,
+        http_status INTEGER,
+        content_hash TEXT,
+        fetch_status TEXT NOT NULL DEFAULT 'pending'
+                     CHECK (fetch_status IN ('pending','ok','failed','blocked','skipped')),
+        fetch_error TEXT,
+        fetched_at TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE (competitor_id, url)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_cpages_competitor ON competitor_pages(competitor_id);
+      CREATE INDEX IF NOT EXISTS idx_cpages_ws ON competitor_pages(workspace_id);
+
+      -- Every extracted fact keeps its source. No row without a source URL.
+      CREATE TABLE IF NOT EXISTS competitor_evidence (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        competitor_id TEXT NOT NULL REFERENCES competitors(id) ON DELETE CASCADE,
+        page_id TEXT,
+        source_url TEXT NOT NULL,
+        evidence_type TEXT NOT NULL,
+        field TEXT,
+        excerpt TEXT,
+        content_hash TEXT,
+        confidence REAL,
+        verification_status TEXT NOT NULL DEFAULT 'observed'
+                            CHECK (verification_status IN ('observed','inferred','unverified')),
+        collected_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_cev_competitor ON competitor_evidence(competitor_id);
+      CREATE INDEX IF NOT EXISTS idx_cev_ws ON competitor_evidence(workspace_id);
+    `
   }
 ];
