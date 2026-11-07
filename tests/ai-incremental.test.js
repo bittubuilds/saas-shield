@@ -27,6 +27,7 @@ const aiStore = require('../src/ai/store');
 const intel = require('../src/competitor/intel-store');
 const versions = require('../src/competitor/evidence-versions');
 const evidenceSource = require('../src/ai/evidence-source');
+const synth = require('../src/ai/synthesize');
 const { newId, utcNow } = require('../src/util');
 
 let BASE = null;
@@ -528,4 +529,105 @@ test('the analysis history API reports versions and their evidence', async () =>
 
   const asStranger = await stranger.client.req('GET', `/workspaces/${stranger.wsId}/competitors/${competitorId}/ai/analyses`);
   assert.equal(asStranger.status, 404);
+});
+
+// --- D. synthesis is incremental and its jobs are claimed ------------------
+
+async function analysedScan() {
+  calls = [];
+  installResponder(goodResponder);
+  const setup = setupScan();
+  seedCollection({
+    workspaceId: owner.wsId, competitorId: setup.competitorId,
+    plans: [{ identity_key: 'starter', plan_name: 'Starter', price_display: '$29', price_value: 29 }],
+    features: [{ identity_key: 'keyword tracking', name: 'Keyword tracking' }]
+  });
+  await engine.runScanAI({ workspaceId: owner.wsId, scanId: setup.scanId });
+  return setup;
+}
+
+test('unchanged findings reuse the stored report instead of a second synthesis', async () => {
+  const { scanId } = await analysedScan();
+  const first = await synth.synthesize({ workspaceId: owner.wsId, scanId });
+  assert.equal(first.ok, true);
+  assert.equal(first.unchanged, false, 'the first synthesis does real work');
+  const callsAfterFirst = calls.length;
+  const usageAfterFirst = aiStore.requestsForScan(scanId);
+
+  const second = await synth.synthesize({ workspaceId: owner.wsId, scanId });
+  assert.equal(second.ok, true);
+  assert.equal(second.unchanged, true, 'the findings hash matched a stored report');
+  assert.equal(second.report_id, first.report_id, 'the same report is returned');
+  assert.equal(second.version, first.version);
+  assert.equal(calls.length, callsAfterFirst, 'no model call for unchanged findings');
+  assert.equal(aiStore.requestsForScan(scanId), usageAfterFirst, 'usage is not double counted');
+
+  const history = aiStore.reportHistory({ workspaceId: owner.wsId, scanId });
+  assert.equal(history.filter((h) => h.status === 'completed').length, 1, 'one report, not a pile of versions');
+});
+
+test('changed findings create a new report version and keep the old one readable', async () => {
+  const { scanId, competitorId } = await analysedScan();
+  const first = await synth.synthesize({ workspaceId: owner.wsId, scanId });
+  const v1 = aiStore.reportByVersion({ workspaceId: owner.wsId, scanId, version: first.version });
+  const v1Snapshot = JSON.stringify(v1.body);
+
+  // A later analysis derives one more claim from the same scan.
+  const analysis = aiStore.analysesFor({ workspaceId: owner.wsId, scanId }).find((a) => a.stage === 'features');
+  const added = aiStore.addFinding({
+    workspaceId: owner.wsId, competitorId, scanId, analysisId: analysis.id,
+    kind: 'feature', statement: 'Adds API access on the pro plan', detail: 'API access',
+    claim: 'explicit', confidence: 0.7, evidenceIds: [], sourceUrls: []
+  });
+  assert.equal(added, true, 'the new finding was stored');
+
+  const second = await synth.synthesize({ workspaceId: owner.wsId, scanId });
+  assert.equal(second.ok, true);
+  assert.equal(second.unchanged, false, 'changed findings trigger synthesis');
+  assert.ok(second.version > first.version, 'the new report is a new version');
+
+  const again = aiStore.reportByVersion({ workspaceId: owner.wsId, scanId, version: first.version });
+  assert.equal(JSON.stringify(again.body), v1Snapshot, 'the historical version is untouched');
+  assert.equal(again.id, v1.id);
+});
+
+test('a synthesis already in flight blocks a duplicate job', async () => {
+  const { scanId } = await analysedScan();
+  // Stand in for a worker that claimed the job and is waiting on the model.
+  const claim = aiStore.claimReport({
+    workspaceId: owner.wsId, scanId, inputHash: 'inflight', provider: 'mock', model: 'm',
+    analysisVersion: 1, competitors: []
+  });
+  assert.equal(claim.claimed, true);
+
+  const callsBefore = calls.length;
+  const blocked = await synth.synthesize({ workspaceId: owner.wsId, scanId });
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.code, 'synthesis_in_progress');
+  assert.equal(calls.length, callsBefore, 'the duplicate job never reached the model');
+
+  const rows = aiStore.reportHistory({ workspaceId: owner.wsId, scanId });
+  assert.equal(rows.filter((r) => r.status === 'running').length, 1, 'still exactly one claim');
+});
+
+test('an abandoned synthesis claim is reclaimed instead of blocking forever', async () => {
+  const { scanId } = await analysedScan();
+  const claim = aiStore.claimReport({
+    workspaceId: owner.wsId, scanId, inputHash: 'abandoned', provider: 'mock', model: 'm',
+    analysisVersion: 1, competitors: []
+  });
+  assert.equal(claim.claimed, true);
+  // Backdate the claim past the stale window: this is what a crash looks like.
+  const old = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  db.prepare('UPDATE ai_reports SET created_at=? WHERE id=?').run(old, claim.id);
+
+  const resumed = await synth.synthesize({ workspaceId: owner.wsId, scanId });
+  assert.equal(resumed.ok, true, JSON.stringify(resumed));
+  assert.equal(resumed.unchanged, false);
+
+  const rows = aiStore.reportHistory({ workspaceId: owner.wsId, scanId });
+  const abandoned = rows.find((r) => r.id === claim.id);
+  assert.equal(abandoned.status, 'failed', 'the abandoned claim is closed, not left running');
+  assert.equal(rows.filter((r) => r.status === 'running').length, 0);
+  assert.ok(rows.some((r) => r.status === 'completed' && r.id === resumed.report_id));
 });

@@ -23,7 +23,8 @@ const opts = { skip: enabled ? false : 'set DATABASE_URL to run PostgreSQL integ
 if (enabled) {
   const { server } = require('../src/server');
   const db = require('../src/db/index');
-  const { applyMigrations } = require('../src/db/migrate');
+  const migrations = require('../src/db/migrations');
+const { applyMigrations } = require('../src/db/migrate');
 
   let BASE = null;
   async function ready() {
@@ -53,8 +54,12 @@ if (enabled) {
 
   test('the backend is PostgreSQL and every migration ran', opts, async () => {
     assert.equal(db.backendKind, 'postgres');
-    const versions = db.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((r) => Number(r.version));
-    assert.deepEqual(versions, [1, 2, 3, 4, 5, 6, 7]);
+    const applied = db.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((r) => Number(r.version));
+    // Every migration the code defines must be applied on this database, in order.
+    // A hardcoded list silently went stale as new migrations landed; the source of
+    // truth is the migration module itself.
+    const defined = migrations.map((m) => Number(m.version)).sort((a, b) => a - b);
+    assert.deepEqual(applied, defined, `applied ${applied.join(',')} vs defined ${defined.join(',')}`);
     // Idempotent: re-running the runner writes nothing.
     assert.equal(applyMigrations(db, { log: () => {} }), 0);
   });

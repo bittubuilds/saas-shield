@@ -57,7 +57,7 @@ function lastCompletedAnalysis({ workspaceId, competitorId }) {
 function unseenEvidence({ workspaceId, competitorId, since }) {
   if (!since) return { count: 0, newest: null };
   const row = db.prepare(`SELECT COUNT(*) c, MAX(observed_at) newest FROM competitor_evidence
-      WHERE workspace_id=? AND competitor_id=? AND superseded_at IS NULL AND observed_at > ?`)
+      WHERE workspace_id=? AND competitor_id=? AND superseded_at IS NULL AND observed_at >= ?`)
     .get(workspaceId, competitorId, since);
   return { count: Number(row.c || 0), newest: row.newest || null };
 }
@@ -87,7 +87,11 @@ function freshnessFor({ workspaceId, competitorId, now = Date.now() }) {
   const success = lastSuccessfulFetch({ workspaceId, competitorId });
   const attempt = lastAttempt({ workspaceId, competitorId });
   const analysis = lastCompletedAnalysis({ workspaceId, competitorId });
-  const since = analysis ? (analysis.finished_at || analysis.created_at) : null;
+  // Start of the window, not the end of it: an analysis reads a snapshot taken
+  // when it started, so evidence observed after `created_at` was never consumed
+  // even if it landed before `finished_at`. Using finished_at dropped that
+  // evidence permanently ("new evidence silently skipped").
+  const since = analysis ? (analysis.created_at || analysis.finished_at) : null;
   const unseen = unseenEvidence({ workspaceId, competitorId, since });
   const evidenceCount = Number(db.prepare(`SELECT COUNT(*) c FROM competitor_evidence
       WHERE workspace_id=? AND competitor_id=? AND superseded_at IS NULL`)

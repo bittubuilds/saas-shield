@@ -184,7 +184,11 @@ function saveReport({ workspaceId, scanId, provider, model, analysisVersion, com
 }
 
 function latestReport({ workspaceId, scanId }) {
-  const row = db.prepare('SELECT * FROM ai_reports WHERE workspace_id=? AND scan_id=? ORDER BY version DESC LIMIT 1').get(workspaceId, scanId);
+  // Only completed reports are readable. A 'running' claim row is bookkeeping:
+  // it holds no body yet and must never be served as if it were a report.
+  const row = db.prepare(`SELECT * FROM ai_reports
+    WHERE workspace_id=? AND scan_id=? AND status='completed'
+    ORDER BY version DESC LIMIT 1`).get(workspaceId, scanId);
   if (!row) return null;
   return { ...row, competitors: JSON.parse(row.competitors), evidence_snapshot: JSON.parse(row.evidence_snapshot), body: JSON.parse(row.body) };
 }
@@ -192,18 +196,99 @@ function latestReport({ workspaceId, scanId }) {
 // One specific stored version, for reproducible exports. Historical reports are
 // never rewritten, so a version resolved once keeps printing the same content.
 function reportByVersion({ workspaceId, scanId, version }) {
-  const row = db.prepare('SELECT * FROM ai_reports WHERE workspace_id=? AND scan_id=? AND version=?')
+  const row = db.prepare(`SELECT * FROM ai_reports
+    WHERE workspace_id=? AND scan_id=? AND version=? AND status='completed'`)
     .get(workspaceId, scanId, Number(version));
   if (!row) return null;
   return { ...row, competitors: JSON.parse(row.competitors), evidence_snapshot: JSON.parse(row.evidence_snapshot), body: JSON.parse(row.body) };
 }
 
 function reportHistory({ workspaceId, scanId }) {
-  return db.prepare('SELECT id, version, status, provider, model, analysis_version, created_at FROM ai_reports WHERE workspace_id=? AND scan_id=? ORDER BY version DESC').all(workspaceId, scanId);
+  return db.prepare(`SELECT id, version, status, provider, model, analysis_version, created_at, finished_at
+    FROM ai_reports WHERE workspace_id=? AND scan_id=? ORDER BY version DESC`).all(workspaceId, scanId);
+}
+
+// --- incremental synthesis -------------------------------------------------
+// What a report would be built from: the findings, and the versions that shaped
+// the prompt. Identical input therefore resolves to the same hash and a stored
+// report can be reused without calling the model again.
+function synthesisInputHash({ findings, analysisVersion, promptVersion }) {
+  const parts = [`v${analysisVersion}`, `p${promptVersion}`,
+    ...[...findings].map((f) => `${f.id}:${f.kind || ''}:${f.statement || ''}`).sort()];
+  return crypto.createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 40);
+}
+
+function reportForHash({ workspaceId, scanId, inputHash }) {
+  return db.prepare(`SELECT * FROM ai_reports
+    WHERE workspace_id=? AND scan_id=? AND input_hash=? AND status='completed'
+    ORDER BY version DESC LIMIT 1`).get(workspaceId, scanId, inputHash);
+}
+
+// A claim that nobody is working on any more (the process died mid-synthesis) is
+// released so the next run can take the job instead of waiting forever.
+function releaseStaleReportClaims({ scanId, olderThanMs }) {
+  const cutoff = new Date(Date.now() - Number(olderThanMs || 0)).toISOString();
+  const res = db.prepare(`UPDATE ai_reports SET status='failed', finished_at=?, error=?
+    WHERE scan_id=? AND status='running' AND created_at < ?`)
+    .run(utcNow(), 'interrupted: synthesis did not finish inside the stale window', scanId, cutoff);
+  return Number((res && res.changes) || 0);
+}
+
+function isRunningClash(e) {
+  const m = String((e && e.message) || '');
+  if (/idx_ai_reports_running/.test(m)) return true;
+  // SQLite reports the violated unique index as a column list: the running claim
+  // lists one column, the version index lists two.
+  return /UNIQUE constraint failed: ai_reports\.scan_id\s*$/.test(m.trim());
+}
+
+// Reserve the right to synthesise this scan. The row is inserted as 'running'
+// before any model call, so a concurrent worker loses the unique index and is
+// told the job is in progress rather than duplicating it.
+function claimReport({ workspaceId, scanId, inputHash, provider: providerName, model, analysisVersion, competitors }) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const last = db.prepare('SELECT MAX(version) v FROM ai_reports WHERE scan_id=?').get(scanId);
+    const version = Number((last && last.v) || 0) + 1;
+    const rid = id('air');
+    try {
+      db.prepare(`INSERT INTO ai_reports
+        (id, workspace_id, scan_id, version, status, provider, model, analysis_version,
+         competitors, evidence_snapshot, body, input_hash, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(rid, workspaceId, scanId, version, 'running', providerName || null, model || null,
+          analysisVersion, JSON.stringify(competitors || []), '{}', '{}', inputHash || null, utcNow());
+      return { claimed: true, id: rid, version };
+    } catch (e) {
+      if (isRunningClash(e)) {
+        const running = db.prepare("SELECT * FROM ai_reports WHERE scan_id=? AND status='running'").get(scanId);
+        return { claimed: false, reason: 'in_progress', running };
+      }
+      const clash = /UNIQUE constraint failed|duplicate key value/i.test(String(e && e.message));
+      // A version clash means another writer allocated this version; recompute.
+      if (!clash || attempt === 3) throw e;
+    }
+  }
+  throw new Error('could not allocate a report version');
+}
+
+function completeReport({ id: reportId, body, evidenceSnapshot, provider: providerName, model }) {
+  db.prepare(`UPDATE ai_reports
+    SET status='completed', body=?, evidence_snapshot=?, provider=COALESCE(?, provider),
+        model=COALESCE(?, model), error=NULL, finished_at=?
+    WHERE id=?`)
+    .run(JSON.stringify(body), JSON.stringify(evidenceSnapshot || {}), providerName || null,
+      model || null, utcNow(), reportId);
+  return reportId;
+}
+
+function failReport({ id: reportId, error }) {
+  db.prepare("UPDATE ai_reports SET status='failed', error=?, finished_at=? WHERE id=?")
+    .run(String(error || 'synthesis failed').slice(0, 500), utcNow(), reportId);
 }
 
 module.exports = {
   findAnalysis, createAnalysis, claimAnalysis, markAnalysis, addFinding, findingsFor, trackUsage,
   requestsForScan, requestsToday, analysesFor, saveReport, latestReport, reportByVersion, reportHistory,
-  snapshotAnalysisEvidence, analysisEvidence, analysisHistory, findingsForAnalysis
+  snapshotAnalysisEvidence, analysisEvidence, analysisHistory, findingsForAnalysis,
+  synthesisInputHash, reportForHash, releaseStaleReportClaims, claimReport, completeReport, failReport
 };

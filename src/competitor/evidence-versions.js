@@ -168,7 +168,7 @@ function historyForCompetitor({ workspaceId, competitorId, limit = 500 }) {
 // analysis has not seen") and for incremental reporting.
 function observedSince({ workspaceId, competitorId, since }) {
   return db.prepare(`SELECT * FROM competitor_evidence
-      WHERE workspace_id=? AND competitor_id=? AND observed_at > ?
+      WHERE workspace_id=? AND competitor_id=? AND observed_at >= ?
       ORDER BY observed_at ASC`).all(workspaceId, competitorId, String(since || ''));
 }
 

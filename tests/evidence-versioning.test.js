@@ -329,3 +329,133 @@ test('evidence and its history are not visible to another workspace', async () =
   const missing = await owner.client.req('GET', `/workspaces/${owner.wsId}/competitors/cmp_does_not_exist/evidence`);
   assert.equal(missing.status, 404);
 });
+
+// --- K. analysis window boundary and same-instant identity -------------------
+// Regression for the 2026-11-07 finding: "unseen" was measured from the moment an
+// analysis finished, so evidence observed while it was running was counted as
+// already consumed and never surfaced again. The window now starts when the
+// analysis began. These tests assert stored rows, not return values.
+
+function seedAnalysisWindow(competitorId, { createdAt, finishedAt = createdAt, status = 'completed' }) {
+  markAnalysed(competitorId, finishedAt);
+  db.prepare("UPDATE ai_analyses SET created_at=?, status=? WHERE competitor_id=?")
+    .run(createdAt, status, competitorId);
+}
+
+test('evidence observed while the analysis was running is not treated as seen', () => {
+  const competitorId = seedCompetitor();
+  seedPage(competitorId, { fetchedAt: '2026-11-07T09:59:00.000Z' });
+  record(competitorId, { observedAt: '2026-11-07T10:00:00.500Z', excerpt: 'Pricing page changed to $59' });
+  seedAnalysisWindow(competitorId, { createdAt: '2026-11-07T10:00:00.000Z', finishedAt: '2026-11-07T10:00:02.000Z' });
+
+  const view = freshness.freshnessFor({ workspaceId: WS, competitorId });
+  assert.equal(view.state, 'changed', 'a mid-run observation was never consumed by that analysis');
+  assert.ok(view.unseen_evidence >= 1, 'it must be reported as unseen');
+});
+
+test('evidence observed exactly at the analysis start is not lost to a boundary', () => {
+  const competitorId = seedCompetitor();
+  seedPage(competitorId, { fetchedAt: '2026-11-07T09:59:00.000Z' });
+  const at = '2026-11-07T10:00:00.000Z';
+  record(competitorId, { observedAt: at, excerpt: 'Boundary observation' });
+  seedAnalysisWindow(competitorId, { createdAt: at });
+
+  const view = freshness.freshnessFor({ workspaceId: WS, competitorId });
+  assert.equal(view.state, 'changed');
+  assert.equal(view.unseen_evidence, 1, 'an equal timestamp is still unpaid work');
+});
+
+test('evidence fully consumed before the analysis started counts as fresh', () => {
+  const competitorId = seedCompetitor();
+  seedPage(competitorId, { fetchedAt: '2026-11-07T09:59:00.000Z' });
+  record(competitorId, { observedAt: '2026-11-07T09:00:00.000Z', excerpt: 'Old pricing $29' });
+  seedAnalysisWindow(competitorId, { createdAt: '2026-11-07T10:00:00.000Z' });
+
+  const view = freshness.freshnessFor({ workspaceId: WS, competitorId });
+  assert.equal(view.state, 'fresh');
+  assert.equal(view.unseen_evidence, 0);
+  const recrawl = freshness.shouldRecollect({ workspaceId: WS, competitorId });
+  assert.equal(Boolean(recrawl.due), false, 'nothing to re-fetch: the evidence is already analysed');
+});
+
+test('an interrupted analysis does not mark evidence as seen', () => {
+  const competitorId = seedCompetitor();
+  seedPage(competitorId, { fetchedAt: '2026-11-07T09:59:00.000Z' });
+  record(competitorId, { observedAt: '2026-11-07T09:30:00.000Z' });
+  seedAnalysisWindow(competitorId, { createdAt: '2026-11-07T10:00:00.000Z', status: 'running' });
+
+  const view = freshness.freshnessFor({ workspaceId: WS, competitorId });
+  assert.equal(view.state, 'changed', 'a run that never completed consumed nothing');
+});
+
+test('different content in the same millisecond creates two distinct versions', () => {
+  const competitorId = seedCompetitor();
+  const at = '2026-11-07T11:00:00.000Z';
+  const a = record(competitorId, { observedAt: at, excerpt: 'Pro plan $49 per month' });
+  const b = record(competitorId, { observedAt: at, excerpt: 'Pro plan $59 per month' });
+
+  assert.equal(a.version, 1);
+  assert.equal(b.version, 2, 'content identity, not the clock, decides the version');
+  const rows = db.prepare('SELECT * FROM competitor_evidence WHERE competitor_id=? ORDER BY version').all(competitorId);
+  assert.equal(rows.length, 2);
+  assert.notEqual(rows[0].content_hash_norm, rows[1].content_hash_norm);
+  assert.ok(rows[0].superseded_at, 'the older version is closed by pointer');
+  assert.equal(rows[1].superseded_at, null);
+});
+
+test('identical content in the same millisecond is one version, two sightings', () => {
+  const competitorId = seedCompetitor();
+  const at = '2026-11-07T11:00:00.000Z';
+  record(competitorId, { observedAt: at, excerpt: 'Free plan available' });
+  const again = record(competitorId, { observedAt: at, excerpt: 'Free plan available' });
+
+  assert.equal(again.status, 'duplicate');
+  const rows = db.prepare('SELECT * FROM competitor_evidence WHERE competitor_id=?').all(competitorId);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].observations, 2);
+  assert.equal(rows[0].version, 1);
+});
+
+test('identical content at a later timestamp updates sightings without a new version', () => {
+  const competitorId = seedCompetitor();
+  const first = record(competitorId, { observedAt: '2026-11-07T11:00:00.000Z', excerpt: 'SSO on enterprise' });
+  record(competitorId, { observedAt: '2026-11-07T12:00:00.000Z', excerpt: 'SSO on enterprise' });
+
+  const rows = db.prepare('SELECT * FROM competitor_evidence WHERE competitor_id=?').all(competitorId);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].version, first.version);
+  assert.equal(rows[0].last_seen_at, '2026-11-07T12:00:00.000Z');
+  assert.equal(rows[0].observed_at, '2026-11-07T11:00:00.000Z', 'first sighting is preserved');
+});
+
+test('repeated identical submissions never move the version number', () => {
+  const competitorId = seedCompetitor();
+  for (let i = 0; i < 5; i += 1) record(competitorId, { excerpt: 'Audit log retention 90 days' });
+  const rows = db.prepare('SELECT version, observations FROM competitor_evidence WHERE competitor_id=?').all(competitorId);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].version, 1);
+  assert.equal(rows[0].observations, 5);
+});
+
+test('a superseded version keeps its own content and timestamp', () => {
+  const competitorId = seedCompetitor();
+  record(competitorId, { observedAt: '2026-11-07T11:00:00.000Z', excerpt: 'Starter $19' });
+  record(competitorId, { observedAt: '2026-11-07T11:05:00.000Z', excerpt: 'Starter $29' });
+  const rows = db.prepare('SELECT * FROM competitor_evidence WHERE competitor_id=? ORDER BY version').all(competitorId);
+  assert.equal(rows[0].excerpt, 'Starter $19');
+  assert.equal(rows[0].observed_at, '2026-11-07T11:00:00.000Z');
+  assert.equal(rows[1].excerpt, 'Starter $29');
+});
+
+test('observedSince returns a stable order when timestamps collide', () => {
+  const competitorId = seedCompetitor();
+  const at = '2026-11-07T13:00:00.000Z';
+  record(competitorId, { observedAt: at, excerpt: 'Claim A' });
+  record(competitorId, { observedAt: at, excerpt: 'Claim B' });
+  record(competitorId, { observedAt: at, excerpt: 'Claim C' });
+
+  const one = versions.observedSince({ workspaceId: WS, competitorId, since: '2026-11-07T12:00:00.000Z' });
+  const two = versions.observedSince({ workspaceId: WS, competitorId, since: '2026-11-07T12:00:00.000Z' });
+  assert.equal(one.length, 3);
+  assert.deepEqual(one.map((r) => r.id), two.map((r) => r.id), 'same rows, same order, every call');
+});

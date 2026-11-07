@@ -94,12 +94,15 @@ function recordEvidence({
 }) {
   const id = newId('cev');
   const now = utcNow();
+  // observed_at is what freshness and incremental analysis read. Writing only
+  // collected_at would leave these rows permanently un-ageable, so both are set
+  // from the same instant: observation and collection happen together here.
   db.prepare(`INSERT INTO competitor_evidence (id, workspace_id, competitor_id, page_id, source_url,
-      evidence_type, field, excerpt, content_hash, confidence, verification_status, collected_at, created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      evidence_type, field, excerpt, content_hash, confidence, verification_status, collected_at, observed_at, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(id, workspaceId, competitorId, pageId, sourceUrl, evidenceType, field,
       excerpt ? String(excerpt).slice(0, 1000) : null, contentHash, confidence,
-      verificationStatus, now, now);
+      verificationStatus, now, now, now);
   return id;
 }
 

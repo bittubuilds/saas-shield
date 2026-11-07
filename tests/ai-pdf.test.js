@@ -155,7 +155,7 @@ function fullBody({ acme = 'acme.test', other = 'rival.test' } = {}) {
     coverage: { competitors_analysed: 2, competitors_without_findings: [], stages_expected: ['overview', 'features', 'pricing', 'positioning'], limitation: null },
     provider: 'mock',
     model: 'mock-1',
-    analysis_version: 'an1',
+    analysis_version: 1,
     prompt_version: 'p1',
     generated_at: '2026-11-07T06:00:00.000Z'
   };
@@ -167,7 +167,9 @@ function saveReport(workspaceId, scanId, body, overrides = {}) {
     scanId,
     provider: overrides.provider || 'mock',
     model: overrides.model || 'mock-1',
-    analysisVersion: overrides.analysisVersion || 'an1',
+    // analysis_version is an INTEGER column. SQLite accepted the old string
+    // fixture silently; PostgreSQL rejects it, so the fixture says what the schema says.
+    analysisVersion: overrides.analysisVersion || 1,
     competitors: (body.competitors || []).map((c) => ({ id: c.competitor_id, name: c.name, domain: c.domain })),
     evidenceSnapshot: { findings: ['aif_1', 'aif_2'], pages: ['ai_ev1', 'ai_ev2'] },
     body
@@ -221,7 +223,7 @@ test('the full report exports every required section with provenance', async () 
   assert.ok(text.includes('Two SEO tools were compared'), 'executive summary text present');
   assert.ok(text.includes('Report version: 1'), 'report version recorded');
   assert.ok(text.includes('mock/mock-1') || (text.includes('mock') && text.includes('mock-1')), 'provider and model recorded');
-  assert.ok(text.includes('an1'), 'analysis version recorded');
+  assert.ok(text.includes('Analysis version: 1'), 'analysis version recorded');
   assert.ok(text.includes('Evidence snapshot: 2 findings and 2 evidence records'), 'evidence snapshot recorded');
 
   // evidence references and source URLs

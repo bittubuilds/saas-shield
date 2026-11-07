@@ -910,5 +910,28 @@ module.exports = [
       CREATE INDEX IF NOT EXISTS idx_shot_workspace
         ON competitor_screenshots(workspace_id, created_at DESC);
     `
+  },
+  {
+    version: 13,
+    name: 'ai-report-incremental',
+    sql: `
+      -- Synthesis becomes incremental the same way per-stage analysis already is:
+      -- the input hash covers exactly the findings a report would be built from, so
+      -- unchanged findings resolve to the report that already exists instead of
+      -- spending another model call. Existing rows keep a NULL hash and are still
+      -- served; only new runs are deduplicated by it.
+      ALTER TABLE ai_reports ADD COLUMN input_hash TEXT;
+      ALTER TABLE ai_reports ADD COLUMN error TEXT;
+      ALTER TABLE ai_reports ADD COLUMN finished_at TEXT;
+
+      -- One in-flight synthesis per scan. The claim row is inserted before the
+      -- model is called, so a second worker cannot start the same job, and a crash
+      -- leaves a visible 'running' row that is reclaimed after the stale window.
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_reports_running
+        ON ai_reports(scan_id)
+        WHERE status = 'running';
+      CREATE INDEX IF NOT EXISTS idx_ai_reports_hash
+        ON ai_reports(scan_id, input_hash);
+    `
   }
 ];

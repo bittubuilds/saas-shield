@@ -294,8 +294,23 @@ test('synthesis persists a versioned report and never destroys earlier ones', as
   assert.equal(first.ok, true);
   assert.equal(first.version, 1, `first synthesis: ${JSON.stringify({ ok: first.ok, code: first.code, version: first.version })}`);
 
+  // Unchanged findings resolve to the report that already exists: a second
+  // synthesis must not spend a model call or invent a version.
   const second = await synth.synthesize({ workspaceId: ws.wsId, scanId });
-  assert.equal(second.version, 2);
+  assert.equal(second.ok, true);
+  assert.equal(second.unchanged, true, 'unchanged findings reuse the stored report');
+  assert.equal(second.version, 1);
+  assert.equal(second.report_id, first.report_id);
+
+  // Changed findings do produce a new version, and version 1 stays readable.
+  const analysis = store.analysesFor({ workspaceId: ws.wsId, scanId }).find((a) => a.status === 'completed');
+  assert.equal(store.addFinding({
+    workspaceId: ws.wsId, competitorId: analysis.competitor_id, scanId,
+    analysisId: analysis.id, kind: 'feature', statement: 'Adds rank alerts',
+    claim: 'explicit', confidence: 0.7, evidenceIds: [], sourceUrls: []
+  }), true);
+  const third = await synth.synthesize({ workspaceId: ws.wsId, scanId });
+  assert.equal(third.version, 2);
   const history = store.reportHistory({ workspaceId: ws.wsId, scanId });
   assert.deepEqual(history.map((h) => h.version), [2, 1], 'history is retained');
 

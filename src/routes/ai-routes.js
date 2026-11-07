@@ -80,8 +80,19 @@ router.post('/workspaces/:workspaceId/scans/:scanId/ai', requireWorkspaceRoute()
     }
     if (!result.ok) return res.status(409).json(result);
     if (!result.paused && result.canSynthesize) {
-      const report = await synth.synthesize({ workspaceId, scanId });
-      return res.json({ ...result, synthesis: report.ok ? { report_id: report.report_id, version: report.version } : report, status: statusPayload({ workspaceId, scanId }) });
+      // Synthesis is a separate job with its own claim. If it fails or is already
+      // running, the analysis that did complete is still real work and is
+      // reported as such instead of being thrown away with an error page.
+      let synthesis;
+      try {
+        const report = await synth.synthesize({ workspaceId, scanId });
+        synthesis = report.ok
+          ? { ok: true, unchanged: Boolean(report.unchanged), report_id: report.report_id, version: report.version }
+          : report;
+      } catch (e) {
+        synthesis = { ok: false, code: e.code || 'synthesis_failed', error: provider.sanitize(e.message) };
+      }
+      return res.json({ ...result, synthesis, status: statusPayload({ workspaceId, scanId }) });
     }
     res.json({ ...result, status: statusPayload({ workspaceId, scanId }) });
   } catch (e) {
@@ -98,10 +109,23 @@ router.get('/workspaces/:workspaceId/scans/:scanId/ai/findings', requireWorkspac
 
 router.get('/workspaces/:workspaceId/scans/:scanId/ai/report', requireWorkspaceRoute(), (req, res) => {
   const workspaceId = req.workspace.id;
-  if (!scanInWorkspace(workspaceId, req.params.scanId)) return res.status(404).json({ error: 'Scan not found.' });
-  const report = store.latestReport({ workspaceId, scanId: req.params.scanId });
-  if (!report) return res.status(404).json({ error: 'No AI report yet.', code: 'no_report' });
-  res.json({ report, history: store.reportHistory({ workspaceId, scanId: req.params.scanId }) });
+  const scanId = req.params.scanId;
+  if (!scanInWorkspace(workspaceId, scanId)) return res.status(404).json({ error: 'Scan not found.' });
+
+  // ?version=N reads one stored version, which is how a historical report stays
+  // readable after a newer one exists. Without it the newest report is returned.
+  let report;
+  if (req.query.version !== undefined) {
+    if (!/^\d+$/.test(String(req.query.version))) {
+      return res.status(400).json({ error: 'version must be a positive integer.' });
+    }
+    report = store.reportByVersion({ workspaceId, scanId, version: req.query.version });
+    if (!report) return res.status(404).json({ error: 'Report version not found.', code: 'no_report' });
+  } else {
+    report = store.latestReport({ workspaceId, scanId });
+    if (!report) return res.status(404).json({ error: 'No AI report yet.', code: 'no_report' });
+  }
+  res.json({ report, history: store.reportHistory({ workspaceId, scanId }) });
 });
 
 // PDF export of the AI report. Defaults to the newest version; ?version=N exports
