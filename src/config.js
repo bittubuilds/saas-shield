@@ -163,6 +163,15 @@ if (!config.monitor.frequencies.includes(config.monitor.defaultFrequencyHours)) 
 
 require('./authmode').apply(config);
 
+// Durability policy. Nothing here changes where data lives by default; it only
+// decides whether the app shouts when that location cannot survive a deploy.
+config.durability = {
+  requireDurable: env.DB_REQUIRE_DURABLE === 'true',
+  persistentPath: env.DB_PERSISTENT_PATH || null,
+  backupDir: env.DB_BACKUP_DIR || null,
+  backupKeep: num(env.DB_BACKUP_KEEP, 7)
+};
+
 // A scan that has not finished within this window is treated as orphaned by a
 // crashed process and recovered. Cancellation and long crawls of big sites stay
 // well inside it; override with SCAN_STALE_AFTER_MINUTES.

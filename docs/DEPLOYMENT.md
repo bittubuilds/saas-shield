@@ -235,3 +235,22 @@ execution behind a claimed-work table (`status='queued'` → `claimed_by`,
 `job_locks`-style lease, and keep the web process read-only for job execution.
 The `job_locks` table and the `scans.status` column already carry the states this
 needs; no Redis is required until polling itself becomes the bottleneck.
+
+---
+
+## Database durability (added Milestone 2)
+
+The free Render plan has no persistent disk, so `data/saas-shield.db` is destroyed on
+every deploy. `/api/health` now reports a `database` block; `database.durable: false`
+means the running instance cannot survive a redeploy.
+
+Durable production setup:
+
+1. Create a free PostgreSQL database (Neon or Supabase).
+2. Set `DATABASE_URL` in the service environment. Migrations apply automatically on boot.
+3. To keep existing SQLite data, run `npm run db:copy -- /path/to/saas-shield.db` once
+   against that database (idempotent, parent-first).
+4. Confirm `/api/health` shows `backend: postgres` and `durable: true`.
+5. Take a snapshot before any migration: `npm run db:backup`.
+
+Full detail: `docs/DATABASE_DURABILITY_REPORT.md`.

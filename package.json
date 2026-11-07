@@ -10,7 +10,11 @@
     "test": "node --test tests/*.test.js",
     "test:similarity": "node --test tests/similarity.test.js",
     "test:crawler": "node --test tests/crawler-security.test.js",
-    "test:app": "node --test tests/app.test.js"
+    "test:app": "node --test tests/app.test.js",
+    "db:backup": "node tools/db-backup.js",
+    "db:restore": "node tools/db-restore.js",
+    "db:verify": "node tools/db-verify.js",
+    "db:copy": "node tools/db-copy-sqlite-to-pg.js"
   },
   "engines": {
     "node": ">=22.5.0"

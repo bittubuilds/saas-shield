@@ -3,6 +3,7 @@ const path = require('path');
 const express = require('express');
 const config = require('./config');
 const db = require('./db/index');
+const durability = require('./db/durability');
 const email = require('./email');
 const authRoutes = require('./routes/auth-routes');
 const { requireAuth } = require('./auth');
@@ -59,6 +60,13 @@ app.use((req, res, next) => {
 });
 
 // Health check for deployment platforms. No auth, no data, no secrets.
+// Probed at startup so an ephemeral deployment announces itself in the deploy log
+// instead of only after the first data loss.
+try { durability.announce(); } catch (e) {
+  console.error('[db] durability check failed:', e.message);
+  if (process.env.DB_REQUIRE_DURABLE === 'true') throw e;
+}
+
 app.get('/api/health', (req, res) => {
   let dbOk = true;
   try {
@@ -72,6 +80,7 @@ app.get('/api/health', (req, res) => {
     env: config.nodeEnv,
     email_configured: email.describeConfig().configured,
     google_oauth_configured: config.oauth.google.configured,
+    database: (() => { try { return durability.probe(); } catch (e) { return { error: e.message }; } })(),
     scheduler_enabled: config.scheduler.enabled,
     external_cron_configured: Boolean(config.scheduler.cronSecret)
   });
