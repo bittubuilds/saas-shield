@@ -44,6 +44,22 @@ function markAnalysis(aid, patch) {
     .run(...keys.map((k) => patch[k]), utcNow(), aid);
 }
 
+// Atomically take ownership of an analysis row. Exactly one caller can win, so a
+// double click or two workers cannot both spend provider quota on one stage.
+// A row left 'running' by a crashed process is reclaimable once it is older than
+// staleAfterMs: that is how interrupted work recovers without a manual reset.
+function claimAnalysis(aid, { staleAfterMs = 10 * 60 * 1000, maxAttempts = 3 } = {}) {
+  const now = utcNow();
+  const staleBefore = new Date(Date.now() - Math.max(0, Number(staleAfterMs))).toISOString();
+  const res = db.prepare(`UPDATE ai_analyses
+    SET status='running', attempts=attempts+1, started_at=?, updated_at=?, error=NULL
+    WHERE id=? AND attempts < ?
+      AND (status IN ('pending','paused','failed')
+           OR (status='running' AND (started_at IS NULL OR started_at < ?)))`)
+    .run(now, now, aid, maxAttempts, staleBefore);
+  return (res && res.changes) === 1;
+}
+
 // Findings are written once per (analysis, kind, statement): a retried batch
 // cannot duplicate what an earlier attempt already stored.
 function addFinding({ workspaceId, competitorId, scanId, analysisId, kind, statement, detail, claim, confidence, evidenceIds, sourceUrls }) {
@@ -99,15 +115,25 @@ function analysesFor({ workspaceId, scanId }) {
 
 function saveReport({ workspaceId, scanId, provider, model, analysisVersion, competitors, evidenceSnapshot, body }) {
   const now = utcNow();
-  const last = db.prepare('SELECT MAX(version) v FROM ai_reports WHERE scan_id=?').get(scanId);
-  const version = Number(last.v || 0) + 1;
-  const rid = id('air');
-  db.prepare(`INSERT INTO ai_reports
-    (id, workspace_id, scan_id, version, status, provider, model, analysis_version, competitors, evidence_snapshot, body, created_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(rid, workspaceId, scanId, version, 'completed', provider, model, analysisVersion,
-      JSON.stringify(competitors), JSON.stringify(evidenceSnapshot), JSON.stringify(body), now);
-  return { id: rid, version };
+  // (scan_id, version) is unique, so two simultaneous syntheses cannot silently
+  // write the same version: the loser recomputes and writes the next one.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const last = db.prepare('SELECT MAX(version) v FROM ai_reports WHERE scan_id=?').get(scanId);
+    const version = Number((last && last.v) || 0) + 1;
+    const rid = id('air');
+    try {
+      db.prepare(`INSERT INTO ai_reports
+        (id, workspace_id, scan_id, version, status, provider, model, analysis_version, competitors, evidence_snapshot, body, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(rid, workspaceId, scanId, version, 'completed', provider, model, analysisVersion,
+          JSON.stringify(competitors), JSON.stringify(evidenceSnapshot), JSON.stringify(body), now);
+      return { id: rid, version };
+    } catch (e) {
+      const clash = /UNIQUE constraint failed|duplicate key value/i.test(String(e && e.message));
+      if (!clash || attempt === 2) throw e;
+    }
+  }
+  throw new Error('could not allocate a report version');
 }
 
 function latestReport({ workspaceId, scanId }) {
@@ -121,6 +147,6 @@ function reportHistory({ workspaceId, scanId }) {
 }
 
 module.exports = {
-  findAnalysis, createAnalysis, markAnalysis, addFinding, findingsFor, trackUsage,
+  findAnalysis, createAnalysis, claimAnalysis, markAnalysis, addFinding, findingsFor, trackUsage,
   requestsForScan, requestsToday, analysesFor, saveReport, latestReport, reportHistory
 };

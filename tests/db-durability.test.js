@@ -132,6 +132,92 @@ test('backup retention keeps the newest snapshots and prunes the rest', () => {
   assert.ok(left.length <= 6, `expected a bounded number of files, got ${left.length}`);
 });
 
+test('postgres-style directory snapshots are listed and pruned by retention', () => {
+  // A Postgres snapshot is a directory, not a file. Before this test the listing
+  // only looked at *.db / *.json, so a Postgres install reported zero backups and
+  // DB_BACKUP_KEEP never pruned anything.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shield-pgsnap-'));
+  const make = (name, ts) => {
+    const d = path.join(dir, name);
+    fs.mkdirSync(d);
+    fs.writeFileSync(path.join(d, 'manifest.json'), JSON.stringify({ backend: 'postgres', tables: { users: 0 } }));
+    fs.writeFileSync(path.join(d, 'users.jsonl'), '');
+    fs.utimesSync(d, new Date(ts), new Date(ts));
+    return d;
+  };
+  make('postgres-manual-1', Date.now() - 30000);
+  make('postgres-manual-2', Date.now() - 20000);
+  make('postgres-manual-3', Date.now() - 10000);
+
+  const listed = backup.listBackups({ dir });
+  assert.equal(listed.length, 3, 'every directory snapshot is visible');
+  assert.ok(listed.every((b) => b.kind === 'postgres'));
+  assert.equal(listed[0].name, 'postgres-manual-3', 'newest first');
+
+  const pruned = backup.pruneBackups({ dir, keep: 2 });
+  assert.equal(pruned.removed.length, 1, 'the oldest directory is pruned whole');
+  assert.deepEqual(
+    backup.listBackups({ dir }).map((b) => b.name).sort(),
+    ['postgres-manual-2', 'postgres-manual-3']
+  );
+  assert.equal(fs.existsSync(path.join(dir, 'postgres-manual-1')), false, 'pruned snapshot is gone from disk');
+});
+
+// The in-process database in this file is always SQLite, so PostgreSQL behaviour
+// is exercised in a child process pointed at TEST_DATABASE_URL.
+const PG_URL = process.env.TEST_DATABASE_URL;
+
+test('a savepoint round trip does not end the surrounding transaction (postgres)', (t) => {
+  if (!PG_URL) return t.skip('TEST_DATABASE_URL not set');
+  const out = childAsync(`
+    const db = require('./src/db/index');
+    db.exec('BEGIN');
+    db.exec('SAVEPOINT probe');
+    db.exec('ROLLBACK TO SAVEPOINT probe');
+    db.exec('RELEASE SAVEPOINT probe');
+    // Prove the work after the savepoint is still transactional: a session temp
+    // table and a row written here must both vanish on ROLLBACK. If the savepoint
+    // had dropped us out of the transaction (the old bug), they would survive.
+    db.exec('CREATE TEMP TABLE savepoint_probe (id integer)');
+    db.prepare('INSERT INTO savepoint_probe (id) VALUES (1)').run();
+    db.exec('ROLLBACK');
+    const still = db.prepare("SELECT to_regclass('pg_temp.savepoint_probe') AS t").get();
+    console.log(JSON.stringify({ still_inside_rollback_scope: still.t !== null }));
+  `, { DATABASE_URL: PG_URL, DATABASE_FILE: '' });
+  return out.then((r) => {
+    assert.equal(r.code, 0, r.err);
+    assert.equal(JSON.parse(r.out.trim().split('\n').pop()).still_inside_rollback_scope, false, 'a savepoint rollback must not end the transaction');
+  });
+});
+
+test('a postgres restore replays parents before children and keeps every row', (t) => {
+  if (!PG_URL) return t.skip('TEST_DATABASE_URL not set');
+  const out = childAsync(`
+    const db = require('./src/db/index');
+    const backup = require('./src/db/backup');
+    const { newId, utcNow } = require('./src/util');
+    const count = (t) => Number(db.prepare('SELECT COUNT(*) c FROM "' + t + '"').get().c);
+    const wsId = newId('wsp');
+    db.prepare('INSERT INTO workspaces (id,name,created_at) VALUES (?,?,?)').run(wsId, 'FkOrder', utcNow());
+    db.prepare('INSERT INTO websites (id,workspace_id,kind,submitted_url,normalized_domain,status,crawl_status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
+      .run(newId('web'), wsId, 'original', 'https://fkorder.test/', 'fkorder.test', 'active', 'not_crawled', utcNow(), utcNow());
+    const before = { workspaces: count('workspaces'), websites: count('websites') };
+    const snap = backup.createBackup({ label: 'fkorder' });
+    const restored = backup.restoreBackup(snap.path, { force: true });
+    const after = { workspaces: count('workspaces'), websites: count('websites') };
+    const kept = Number(db.prepare('SELECT COUNT(*) c FROM workspaces WHERE id=?').get(wsId).c);
+    console.log(JSON.stringify({ before, after, kept, restored }));
+  `, { DATABASE_URL: PG_URL, DATABASE_FILE: '' });
+  return out.then((r) => {
+    assert.equal(r.code, 0, r.err);
+    const data = JSON.parse(r.out.trim().split('\n').pop());
+    assert.equal(data.restored.ok, true, data.restored.error || 'restore failed');
+    assert.equal(data.after.workspaces, data.before.workspaces, 'no workspace lost');
+    assert.equal(data.after.websites, data.before.websites, 'children restored after parents');
+    assert.equal(data.kept, 1, 'the seeded workspace survived the round trip');
+  });
+});
+
 test('a truncated snapshot fails verification instead of restoring silently', () => {
   const snap = backup.createBackup({ label: 'corrupt' });
   fs.writeFileSync(snap.path, Buffer.alloc(64, 0));

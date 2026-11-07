@@ -328,3 +328,117 @@ test('findings and reports are invisible to another workspace', async () => {
   assert.equal(store.reportHistory({ workspaceId: b.wsId, scanId }).length, 0);
   assert.deepEqual(store.analysesFor({ workspaceId: b.wsId, scanId }), []);
 });
+
+// ---- concurrency and recovery -------------------------------------------
+const mockShape = (stage) => ({
+  overview: OVERVIEW, features: FEATURES, pricing: PRICING, positioning: POSITIONING, synthesis: SYNTH
+}[stage] || OVERVIEW);
+
+function useMock({ delayMs = 0, failWith = null } = {}) {
+  let calls = 0;
+  const byStage = {};
+  provider.setMockResponder(async ({ stage }) => {
+    calls += 1;
+    byStage[stage] = (byStage[stage] || 0) + 1;
+    if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
+    if (failWith) throw new provider.ProviderError(failWith.message, { code: failWith.code });
+    return mockShape(stage);   // callMock treats this as the parsed JSON body
+  });
+  return { calls: () => calls, byStage: () => byStage };
+}
+
+test('two concurrent runs cannot both spend quota on the same stage', async () => {
+  const ws = workspace('race');
+  const { scanId } = seedScan(ws);
+  process.env.AI_PROVIDER = 'mock';
+  const spy = useMock({ delayMs: 15 });
+
+  const [a, b] = await Promise.all([
+    engine.runScanAI({ workspaceId: ws.wsId, scanId }),
+    engine.runScanAI({ workspaceId: ws.wsId, scanId })
+  ]);
+
+  assert.equal(spy.calls(), 4, 'exactly one provider call per stage, not two');
+  const rows = db.prepare('SELECT COUNT(*) c FROM ai_analyses WHERE scan_id=?').get(scanId).c;
+  assert.equal(Number(rows), 4, 'one analysis row per stage');
+  const pausedOrBusy = [a, b].filter((r) => r.busy || r.paused).length;
+  assert.equal(pausedOrBusy, 1, 'the loser reports in-progress work instead of duplicating it');
+  assert.ok(['in_progress'].includes([a, b].flatMap((r) => Object.values(r.perCompetitor || {}).flat())[0].status)
+    || [a, b].some((r) => Object.values(r.perCompetitor || {}).flat().some((s) => s.status === 'in_progress')),
+    'the loser surfaces in_progress');
+  delete process.env.AI_PROVIDER;
+});
+
+test('a stage left running by a crashed process is reclaimed after the stale window', async () => {
+  const ws = workspace('stale');
+  const { scanId } = seedScan(ws);
+  process.env.AI_PROVIDER = 'mock';
+  const spy = useMock();
+
+  const first = await engine.runScanAI({ workspaceId: ws.wsId, scanId });
+  assert.equal(first.ok, true);
+  assert.equal(spy.calls(), 4);
+
+  // simulate a crash mid-flight: the row says running, its evidence is unchanged
+  db.prepare(`UPDATE ai_analyses SET status='running', started_at=?, finished_at=NULL WHERE scan_id=?`)
+    .run(new Date(Date.now() - 60 * 60 * 1000).toISOString(), scanId);
+
+  const second = await engine.runScanAI({ workspaceId: ws.wsId, scanId });
+  assert.equal(second.busy, false, 'a stale running row is not treated as live');
+  const statuses = db.prepare('SELECT DISTINCT status s FROM ai_analyses WHERE scan_id=?').all(scanId).map((r) => r.s);
+  assert.deepEqual(statuses, ['completed'], 'reclaimed work finishes instead of hanging in running');
+  delete process.env.AI_PROVIDER;
+});
+
+test('a live in-flight run is respected, not reclaimed', async () => {
+  const ws = workspace('inflight');
+  const { scanId } = seedScan(ws);
+  process.env.AI_PROVIDER = 'mock';
+  const spy = useMock();
+  await engine.runScanAI({ workspaceId: ws.wsId, scanId });
+
+  db.prepare(`UPDATE ai_analyses SET status='running', started_at=? WHERE scan_id=?`)
+    .run(new Date().toISOString(), scanId);
+  const before = spy.calls();
+  const out = await engine.runScanAI({ workspaceId: ws.wsId, scanId });
+  assert.equal(out.busy, true);
+  assert.equal(spy.calls(), before, 'no provider call while another run owns the stage');
+  assert.equal(out.canSynthesize, false);
+  delete process.env.AI_PROVIDER;
+});
+
+test('a quota wall pauses without burning the attempt budget', async () => {
+  const ws = workspace('quota');
+  const { scanId } = seedScan(ws);
+  process.env.AI_PROVIDER = 'mock';
+  const spy = useMock({ failWith: { message: 'rate limit', code: 'quota_exhausted' } });
+
+  const out = await engine.runScanAI({ workspaceId: ws.wsId, scanId });
+  assert.equal(out.paused, true);
+  const rows = db.prepare('SELECT status, attempts FROM ai_analyses WHERE scan_id=?').all(scanId);
+  assert.ok(rows.every((r) => r.status === 'paused'));
+  assert.ok(rows.every((r) => Number(r.attempts) === 0), 'a quota wall refunds the attempt');
+
+  // with the wall gone the same rows run instead of being written off
+  useMock();
+  const ok = await engine.runScanAI({ workspaceId: ws.wsId, scanId });
+  assert.equal(ok.paused, false);
+  assert.equal(db.prepare("SELECT COUNT(*) c FROM ai_analyses WHERE scan_id=? AND status='completed'").get(scanId).c, 4);
+  delete process.env.AI_PROVIDER;
+});
+
+test('repeated hard failures stop at the attempt ceiling', async () => {
+  const ws = workspace('ceiling');
+  const { scanId } = seedScan(ws);
+  process.env.AI_PROVIDER = 'mock';
+  process.env.AI_MAX_ATTEMPTS = '2';
+  useMock({ failWith: { message: 'bad json', code: 'invalid_json' } });
+
+  await engine.runScanAI({ workspaceId: ws.wsId, scanId });
+  const second = await engine.runScanAI({ workspaceId: ws.wsId, scanId });
+  const attempts = db.prepare('SELECT MAX(attempts) a FROM ai_analyses WHERE scan_id=?').get(scanId).a;
+  assert.equal(Number(attempts), 2, 'attempts stop at the ceiling');
+  assert.ok(Object.values(second.perCompetitor)[0].every((r) => r.status === 'failed'));
+  delete process.env.AI_MAX_ATTEMPTS;
+  delete process.env.AI_PROVIDER;
+});

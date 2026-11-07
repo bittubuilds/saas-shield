@@ -28,7 +28,8 @@ function limits() {
     maxRequestsPerScan: Number(process.env.AI_MAX_REQUESTS_PER_SCAN || 40),
     maxRequestsPerDay: Number(process.env.AI_MAX_REQUESTS_PER_DAY || 200),
     maxAttempts: Number(process.env.AI_MAX_ATTEMPTS || 3),
-    minPageChars: Number(process.env.AI_MIN_PAGE_CHARS || 80)
+    minPageChars: Number(process.env.AI_MIN_PAGE_CHARS || 80),
+    staleRunningMs: Number(process.env.AI_STALE_RUNNING_MINUTES || 10) * 60 * 1000
   };
 }
 
@@ -134,22 +135,45 @@ async function runStage({ workspaceId, competitor, scanId, stage }) {
   }
 
   const cfg = provider.config();
-  const analysis = existing || store.createAnalysis({
-    workspaceId, competitorId: competitor.id, scanId, stage, inputHash: hash,
-    analysisVersion: version, promptVersion: prompts.PROMPT_VERSION,
-    provider: cfg.provider, model: cfg.model
-  });
-
-  if (store.requestsForScan(scanId) >= limits().maxRequestsPerScan) {
-    store.markAnalysis(analysis.id, { status: 'paused', error: 'scan_request_cap' });
-    return { stage, status: 'paused', reason: 'scan_request_cap' };
+  // Two runs can race on the same (competitor, stage, evidence) row: the unique
+  // index makes the second insert fail, so the loser adopts the winner's row.
+  let analysis = existing;
+  if (!analysis) {
+    try {
+      analysis = store.createAnalysis({
+        workspaceId, competitorId: competitor.id, scanId, stage, inputHash: hash,
+        analysisVersion: version, promptVersion: prompts.PROMPT_VERSION,
+        provider: cfg.provider, model: cfg.model
+      });
+    } catch (e) {
+      analysis = store.findAnalysis({ workspaceId, competitorId: competitor.id, stage, inputHash: hash, analysisVersion: version });
+      if (!analysis) throw e;
+      if (analysis.status === 'completed') return { stage, status: 'unchanged', analysisId: analysis.id };
+    }
   }
-  if (store.requestsToday(workspaceId) >= limits().maxRequestsPerDay) {
-    store.markAnalysis(analysis.id, { status: 'paused', error: 'daily_request_cap' });
-    return { stage, status: 'paused', reason: 'daily_request_cap' };
+
+  // Caps are checked before claiming so a refusal never consumes an attempt and
+  // never overwrites the state of a run that is genuinely in flight.
+  const scanUsed = store.requestsForScan(scanId);
+  const dayUsed = store.requestsToday(workspaceId);
+  if (scanUsed >= limits().maxRequestsPerScan || dayUsed >= limits().maxRequestsPerDay) {
+    const reason = scanUsed >= limits().maxRequestsPerScan ? 'scan_request_cap' : 'daily_request_cap';
+    if (analysis.status !== 'running') store.markAnalysis(analysis.id, { status: 'paused', error: reason });
+    return { stage, status: 'paused', reason };
   }
 
-  store.markAnalysis(analysis.id, { status: 'running', started_at: new Date().toISOString(), attempts: Number(analysis.attempts || 0) + 1, error: null });
+  // One caller owns the stage. A 'running' row older than the stale window is
+  // adopted, which recovers work interrupted by a crash or a restart.
+  if (!store.claimAnalysis(analysis.id, { staleAfterMs: limits().staleRunningMs, maxAttempts: limits().maxAttempts })) {
+    const fresh = store.findAnalysis({ workspaceId, competitorId: competitor.id, stage, inputHash: hash, analysisVersion: version }) || analysis;
+    if (fresh.status === 'completed') return { stage, status: 'unchanged', analysisId: fresh.id };
+    if (Number(fresh.attempts) >= limits().maxAttempts) {
+      store.markAnalysis(fresh.id, { status: 'failed', error: 'max_attempts', finished_at: new Date().toISOString() });
+      return { stage, status: 'failed', analysisId: fresh.id, reason: 'max_attempts' };
+    }
+    return { stage, status: fresh.status === 'running' ? 'in_progress' : fresh.status, analysisId: fresh.id, reason: 'already_running' };
+  }
+
   try {
     const prompt = prompts.buildStagePrompt({ stage, competitor, pages });
     const result = await provider.complete({ system: prompt.system, user: prompt.user, stage });
@@ -178,6 +202,9 @@ async function runStage({ workspaceId, competitor, scanId, stage }) {
     store.markAnalysis(analysis.id, {
       status: paused ? 'paused' : 'failed',
       error: provider.sanitize(e.message),
+      // A quota wall or an outage never actually analysed anything, so the
+      // attempt is refunded and the stage can still use its full budget later.
+      attempts: paused ? Number(analysis.attempts || 0) : Number(analysis.attempts || 0) + 1,
       finished_at: new Date().toISOString()
     });
     return { stage, status: paused ? 'paused' : 'failed', analysisId: analysis.id, reason: e.code || 'error' };
@@ -189,7 +216,7 @@ async function analyzeCompetitor({ workspaceId, competitor, scanId }) {
   for (const stage of STAGES) {
     const r = await runStage({ workspaceId, competitor, scanId, stage });
     results.push(r);
-    if (r.status === 'paused') break; // stop the competitor, keep completed stages
+    if (r.status === 'paused' || r.status === 'in_progress') break; // stop the competitor, keep completed stages
   }
   return results;
 }
@@ -201,19 +228,22 @@ async function runScanAI({ workspaceId, scanId }) {
 
   const perCompetitor = {};
   let paused = false;
+  let busy = false;
   for (const competitor of competitors) {
     perCompetitor[competitor.id] = await analyzeCompetitor({ workspaceId, competitor, scanId });
     if (perCompetitor[competitor.id].some((r) => r.status === 'paused')) { paused = true; break; }
+    if (perCompetitor[competitor.id].some((r) => r.status === 'in_progress')) { busy = true; break; }
   }
 
   const analyses = store.analysesFor({ workspaceId, scanId });
   return {
     ok: true,
     paused,
+    busy,
     competitors: competitors.length,
     analyses: analyses.map((a) => ({ competitor_id: a.competitor_id, stage: a.stage, status: a.status })),
     perCompetitor,
-    canSynthesize: !paused && analyses.some((a) => a.status === 'completed')
+    canSynthesize: !paused && !busy && analyses.some((a) => a.status === 'completed')
   };
 }
 

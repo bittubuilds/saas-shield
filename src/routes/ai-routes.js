@@ -11,7 +11,13 @@ const store = require('../ai/store');
 const { rateLimit } = require('../auth');
 
 const router = express.Router();
-const analyseLimiter = rateLimit({ limit: 6, windowMs: 60 * 1000, bucket: 'ai-analyse' });
+// Default stays 6 runs per minute per IP; the ceiling is read at request time so
+// an operator can tune it without a code change, and tests can isolate it.
+const analyseLimiter = (req, res, next) => rateLimit({
+  limit: Number(process.env.AI_ANALYSE_RATE_LIMIT || 6),
+  windowMs: 60 * 1000,
+  bucket: 'ai-analyse'
+})(req, res, next);
 
 function scanInWorkspace(workspaceId, scanId) {
   return db.prepare('SELECT * FROM scans WHERE id=? AND workspace_id=?').get(scanId, workspaceId);
@@ -57,8 +63,20 @@ router.post('/workspaces/:workspaceId/scans/:scanId/ai', requireWorkspaceRoute()
   if (!provider.isConfigured()) {
     return res.status(503).json({ error: 'AI analysis is not configured on this server.', code: 'not_configured' });
   }
+  // Analysing half-crawled evidence would produce confident claims about pages
+  // that were never read, so only a finished scan can be analysed.
+  if (scan.status !== 'completed') {
+    return res.status(409).json({ error: 'The scan has not finished yet.', code: 'scan_not_completed', scan_status: scan.status });
+  }
   try {
     const result = await engine.runScanAI({ workspaceId, scanId });
+    if (result.busy) {
+      return res.status(409).json({
+        error: 'Analysis is already running for this scan.',
+        code: 'analysis_in_progress',
+        status: statusPayload({ workspaceId, scanId })
+      });
+    }
     if (!result.ok) return res.status(409).json(result);
     if (!result.paused && result.canSynthesize) {
       const report = await synth.synthesize({ workspaceId, scanId });

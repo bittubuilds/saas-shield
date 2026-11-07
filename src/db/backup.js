@@ -71,25 +71,55 @@ function createBackup({ dir = BACKUP_DIR, label = 'auto' } = {}) {
   return { ok: true, backend: 'postgres', path: target, tables: Object.keys(manifest.tables).length, rows: Object.values(manifest.tables).reduce((a, b) => a + b, 0), manifest };
 }
 
+// A snapshot is either a SQLite .db plus its .json manifest, or - on PostgreSQL -
+// a directory of one .jsonl per table with manifest.json inside. Both shapes have
+// to be listed, or retention cannot see (and cannot prune) the Postgres ones.
+function snapshotKind(full, name) {
+  const st = fs.statSync(full);
+  if (st.isDirectory()) {
+    return fs.existsSync(path.join(full, 'manifest.json')) ? 'postgres' : null;
+  }
+  return name.endsWith('.json') || name.endsWith('.db') ? 'file' : null;
+}
+
+function dirBytes(full) {
+  let total = 0;
+  for (const entry of fs.readdirSync(full, { withFileTypes: true })) {
+    const child = path.join(full, entry.name);
+    total += entry.isDirectory() ? dirBytes(child) : fs.statSync(child).size;
+  }
+  return total;
+}
+
 function listBackups({ dir = BACKUP_DIR } = {}) {
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir)
-    .filter((n) => n.endsWith('.json') || n.endsWith('.db'))
     .map((n) => {
       const full = path.join(dir, n);
+      const kind = snapshotKind(full, n);
+      if (!kind) return null;
       const st = fs.statSync(full);
-      return { name: n, bytes: st.size, modified: st.mtime.toISOString(), path: full };
+      return {
+        name: n,
+        kind,
+        bytes: st.isDirectory() ? dirBytes(full) : st.size,
+        modified: st.mtime.toISOString(),
+        path: full
+      };
     })
+    .filter(Boolean)
     .sort((a, b) => (a.modified < b.modified ? 1 : -1));
 }
 
 // Prune old snapshots, newest kept. Used by the retention policy so backups
 // cannot fill a small disk.
 function pruneBackups({ dir = BACKUP_DIR, keep = 7 } = {}) {
-  const all = listBackups({ dir }).filter((b) => b.name.endsWith('.db') || b.name.endsWith('manifest.json') || b.name.endsWith('.json'));
+  const all = listBackups({ dir })
+    .filter((b) => b.kind === 'postgres' || b.name.endsWith('.db') || b.name.endsWith('manifest.json') || b.name.endsWith('.json'));
   const snapshots = new Map();
   for (const b of all) {
-    const key = b.name.replace(/\.(db|json)$/, '');
+    // a directory snapshot is already keyed by its own name, no suffix to strip
+    const key = b.kind === 'postgres' ? b.name : b.name.replace(/\.(db|json)$/, '');
     const cur = snapshots.get(key) || { key, files: [] };
     cur.files.push(b.path);
     snapshots.set(key, cur);
@@ -98,10 +128,51 @@ function pruneBackups({ dir = BACKUP_DIR, keep = 7 } = {}) {
   const removed = [];
   for (const k of keys.slice(keep)) {
     for (const f of snapshots.get(k).files) {
-      try { fs.unlinkSync(f); removed.push(f); } catch { /* already gone */ }
+      try {
+        // directory snapshots are removed whole; a file snapshot is one unlink
+        if (fs.statSync(f).isDirectory()) fs.rmSync(f, { recursive: true, force: true });
+        else fs.unlinkSync(f);
+        removed.push(f);
+      } catch { /* already gone */ }
     }
   }
   return { removed, kept: Math.min(keys.length, keep) };
+}
+
+// A logical restore has to insert parents before children. The manifest is
+// alphabetical, and 'competitors' sorts before 'workspaces', so a naive replay
+// trips foreign keys on any real dataset. Order by the live foreign-key graph.
+function dependencyOrder(names) {
+  const wanted = new Set(names);
+  const parents = new Map(names.map((n) => [n, new Set()]));
+  if (db.backendKind === 'postgres') {
+    const edges = db.prepare(`
+      SELECT tc.table_name AS child, ccu.table_name AS parent
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.constraint_column_usage ccu
+          ON ccu.constraint_name = tc.constraint_name
+         AND ccu.constraint_schema = tc.constraint_schema
+       WHERE tc.constraint_type = 'FOREIGN KEY'`).all();
+    for (const e of edges) {
+      if (e.child === e.parent) continue;               // self reference: fine in place
+      if (!wanted.has(e.child) || !wanted.has(e.parent)) continue;
+      parents.get(e.child).add(e.parent);
+    }
+  }
+  const order = [];
+  const placed = new Set();
+  let pending = [...names];
+  while (pending.length) {
+    const ready = pending.filter((n) => [...parents.get(n)].every((p2) => placed.has(p2)));
+    if (!ready.length) {
+      // cycle: emit the rest in manifest order rather than dropping tables
+      for (const n of pending) { order.push(n); placed.add(n); }
+      break;
+    }
+    for (const n of ready) { order.push(n); placed.add(n); }
+    pending = pending.filter((n) => !placed.has(n));
+  }
+  return order;
 }
 
 function rowCounts() {
@@ -151,7 +222,12 @@ function verifyBackup(target) {
 function restoreBackup(target, { force = false } = {}) {
   const full = path.resolve(target);
   const counts = rowCounts();
-  const populated = Object.entries(counts).filter(([t, c]) => c > 0 && t !== 'schema_migrations');
+  // Migration bookkeeping alone does not count as "this database holds data":
+  // a freshly migrated target still has schema_migrations and app_meta rows, and
+  // making the operator type --force to restore into an empty database is exactly
+  // the kind of friction a restore during an outage cannot afford.
+  const BOOKKEEPING = new Set(['schema_migrations', 'app_meta']);
+  const populated = Object.entries(counts).filter(([t, c]) => c > 0 && !BOOKKEEPING.has(t));
   if (populated.length && !force) {
     return { ok: false, error: 'target database already has data; pass --force to replace it', populated: populated.map(([t]) => t) };
   }
@@ -164,8 +240,10 @@ function restoreBackup(target, { force = false } = {}) {
   }
 
   const manifest = JSON.parse(fs.readFileSync(path.join(full, 'manifest.json'), 'utf8'));
-  const order = Object.keys(manifest.tables);
+  const order = dependencyOrder(Object.keys(manifest.tables));
   const restored = {};
+  const failures = [];
+  const skipped = [];
   db.exec('BEGIN');
   try {
     if (force) {
@@ -179,16 +257,45 @@ function restoreBackup(target, { force = false } = {}) {
         const cols = Object.keys(row);
         if (!cols.length) continue;
         const sql = `INSERT INTO "${t}" (${cols.map((c) => `"${c}"`).join(',')}) VALUES (${cols.map(() => '?').join(',')})`;
-        try { db.prepare(sql).run(...cols.map((c) => row[c])); } catch { /* row already present */ }
+        // A silently skipped row is a lost row. Collect the failure and roll the
+        // whole restore back rather than reporting success over a partial load.
+        // A per-row savepoint keeps one bad row from aborting the whole load on
+        // PostgreSQL, and it is what lets a bookkeeping collision be skipped
+        // instead of taking the restore down with it.
+        db.exec('SAVEPOINT restore_row');
+        try {
+          db.prepare(sql).run(...cols.map((c) => row[c]));
+          restored[t] = (restored[t] || 0) + 1;
+          db.exec('RELEASE SAVEPOINT restore_row');
+        } catch (rowError) {
+          try { db.exec('ROLLBACK TO SAVEPOINT restore_row'); } catch { /* ignore */ }
+          const message = String(rowError && rowError.message);
+          // A freshly migrated target already holds migrations and app_meta rows.
+          // Those are not user data, so an existing copy is simply kept.
+          const duplicate = /duplicate key|UNIQUE constraint/i.test(message);
+          if (duplicate && BOOKKEEPING.has(t)) {
+            skipped.push({ table: t, reason: 'already present' });
+          } else {
+            failures.push({ table: t, error: message.slice(0, 200) });
+          }
+        }
       }
-      restored[t] = rows.length;
+    }
+    if (failures.length) {
+      db.exec('ROLLBACK');
+      return {
+        ok: false,
+        error: `${failures.length} row(s) could not be restored; nothing was committed`,
+        failures: failures.slice(0, 5),
+        restored_before_rollback: restored
+      };
     }
     db.exec('COMMIT');
   } catch (e) {
     try { db.exec('ROLLBACK'); } catch { /* ignore */ }
     return { ok: false, error: e.message };
   }
-  return { ok: true, backend: 'postgres', restored };
+  return { ok: true, backend: 'postgres', restored, skipped };
 }
 
 module.exports = { BACKUP_DIR, createBackup, listBackups, pruneBackups, verifyBackup, restoreBackup, rowCounts, tables };

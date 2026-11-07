@@ -78,10 +78,17 @@ parentPort.on('message', async (msg) => {
       await txClient.query('BEGIN');
       return reply(sab, { ok: true, rows: [], rowCount: 0 });
     }
-    if (head === 'COMMIT' || head === 'ROLLBACK') {
+    // Only a transaction-ending statement ends the pinned client. Matching on the
+    // first word alone broke savepoints: 'ROLLBACK TO SAVEPOINT x' starts with
+    // ROLLBACK, so it released the transaction and every later statement ran
+    // autocommit outside it. A restore that relied on savepoints then committed a
+    // partial load. Match the whole statement instead.
+    const statement = String(sql || '').trim().replace(/;+$/, '');
+    const endsTransaction = /^(COMMIT|ROLLBACK|END)(\s+(TRANSACTION|WORK))?$/i.test(statement);
+    if (endsTransaction) {
       if (!txClient) return reply(sab, { ok: true, rows: [], rowCount: 0 });
       const client = txClient;
-      try { await client.query(head); } finally { txClient = null; client.release(); }
+      try { await client.query(statement.split(/\s+/)[0].toUpperCase()); } finally { txClient = null; client.release(); }
       return reply(sab, { ok: true, rows: [], rowCount: 0 });
     }
     const t = translate(sql, params);
