@@ -85,6 +85,53 @@ function findingsFor({ workspaceId, scanId, competitorId }) {
   }));
 }
 
+// Record the evidence an analysis consumed. Idempotent: a retried completion
+// cannot duplicate a snapshot row.
+function snapshotAnalysisEvidence({ workspaceId, scanId = null, competitorId, analysisId, items = [] }) {
+  const now = utcNow();
+  let inserted = 0;
+  for (const item of items) {
+    const res = db.prepare(`INSERT INTO ai_analysis_evidence
+      (id, workspace_id, analysis_id, scan_id, competitor_id, evidence_kind, evidence_id,
+       source_url, content_hash, observed_at, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT (analysis_id, evidence_kind, evidence_id, content_hash) DO NOTHING`)
+      .run(id('aiev'), workspaceId, analysisId, scanId, competitorId, item.kind, item.id,
+        item.url || null, item.contentHash === null || item.contentHash === undefined ? '' : String(item.contentHash),
+        item.observedAt || null, now);
+    if (res && res.changes === 1) inserted += 1;
+  }
+  return inserted;
+}
+
+function analysisEvidence({ workspaceId, analysisId }) {
+  return db.prepare(`SELECT * FROM ai_analysis_evidence
+    WHERE workspace_id=? AND analysis_id=? ORDER BY evidence_kind, evidence_id`)
+    .all(workspaceId, analysisId);
+}
+
+// Every analysis ever run for this competitor, newest first. Historical rows are
+// kept when evidence changes, so a previous read of the same evidence stays
+// reproducible instead of being replaced.
+function analysisHistory({ workspaceId, competitorId, stage = null, limit = 50 }) {
+  const rows = stage
+    ? db.prepare(`SELECT * FROM ai_analyses WHERE workspace_id=? AND competitor_id=? AND stage=?
+        ORDER BY created_at DESC, id DESC LIMIT ?`).all(workspaceId, competitorId, stage, limit)
+    : db.prepare(`SELECT * FROM ai_analyses WHERE workspace_id=? AND competitor_id=?
+        ORDER BY created_at DESC, id DESC LIMIT ?`).all(workspaceId, competitorId, limit);
+  return rows;
+}
+
+function findingsForAnalysis({ workspaceId, analysisId }) {
+  return db.prepare('SELECT * FROM ai_findings WHERE workspace_id=? AND analysis_id=? ORDER BY kind, statement')
+    .all(workspaceId, analysisId)
+    .map((r) => ({
+      ...r,
+      evidence_ids: JSON.parse(r.evidence_ids || '[]'),
+      source_urls: JSON.parse(r.source_urls || '[]')
+    }));
+}
+
 function trackUsage({ workspaceId, scanId, provider, model, requests = 1, tokensIn = 0, tokensOut = 0 }) {
   const now = utcNow();
   const existing = db.prepare('SELECT * FROM ai_usage WHERE workspace_id=? AND scan_id=? AND provider=? AND model=? AND day=?')
@@ -157,5 +204,6 @@ function reportHistory({ workspaceId, scanId }) {
 
 module.exports = {
   findAnalysis, createAnalysis, claimAnalysis, markAnalysis, addFinding, findingsFor, trackUsage,
-  requestsForScan, requestsToday, analysesFor, saveReport, latestReport, reportByVersion, reportHistory
+  requestsForScan, requestsToday, analysesFor, saveReport, latestReport, reportByVersion, reportHistory,
+  snapshotAnalysisEvidence, analysisEvidence, analysisHistory, findingsForAnalysis
 };

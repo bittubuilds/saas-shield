@@ -11,6 +11,14 @@ this engine analyses page **text** evidence only. Nothing here claims visual
 analysis, and the existing report already states that visual similarity is not
 measured.
 
+**Evidence input.** The engine now reads Phase 4 structured evidence (collected
+pages, current feature claims, current pricing plans and the pricing summary) and
+falls back to the original-site crawl only when a competitor has nothing
+collected. Evidence is versioned and freshness-tracked before it reaches a
+prompt: see [EVIDENCE_VERSIONING.md](./EVIDENCE_VERSIONING.md). Per-stage
+fingerprints mean a pricing change re-runs the pricing stage only, and the model's
+own citations are validated against the evidence that was supplied.
+
 ## 1. Provider and model
 
 | Item | Value |

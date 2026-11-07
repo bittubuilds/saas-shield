@@ -52,7 +52,8 @@ const STAGE_SHAPES = {
     audience: isStr(o.audience, { max: 300 }) ? clean(o.audience, 300) : 'unknown',
     positioning: isStr(o.positioning, { max: 500 }) ? clean(o.positioning, 500) : 'unknown',
     differentiators: arr(o.differentiators, 8).filter((x) => isStr(x, { max: 240 })).map((x) => clean(x, 240)),
-    unknowns: arr(o.unknowns, 8).filter((x) => isStr(x, { max: 240 })).map((x) => clean(x, 240))
+    unknowns: arr(o.unknowns, 8).filter((x) => isStr(x, { max: 240 })).map((x) => clean(x, 240)),
+    evidence_ids: arr(o.evidence_ids, 8).map((x) => String(x))
   }),
   features: (o) => ({
     features: arr(o.features, 30).filter((f) => f && isStr(f.name, { max: 120 })).map((f) => ({
@@ -60,7 +61,10 @@ const STAGE_SHAPES = {
       category: isStr(f.category, { max: 80 }) ? clean(f.category, 80) : 'uncategorised',
       statement: isStr(f.statement, { max: 300 }) ? clean(f.statement, 300) : null,
       claim: level(f.claim),
-      confidence: confidence(f.confidence)
+      confidence: confidence(f.confidence),
+      // Kept so the engine can reject a citation that points at evidence it did
+      // not supply, instead of quietly attributing the claim to everything.
+      evidence_ids: arr(f.evidence_ids, 8).map((x) => String(x))
     }))
   }),
   pricing: (o) => ({
@@ -70,7 +74,8 @@ const STAGE_SHAPES = {
       interval: isStr(p.interval, { max: 40 }) ? clean(p.interval, 40) : 'unknown',
       notes: isStr(p.notes, { max: 300 }) ? clean(p.notes, 300) : null,
       claim: level(p.claim),
-      confidence: confidence(p.confidence)
+      confidence: confidence(p.confidence),
+      evidence_ids: arr(p.evidence_ids, 8).map((x) => String(x))
     })),
     has_free_tier: typeof o.has_free_tier === 'boolean' ? o.has_free_tier : null,
     enterprise: typeof o.enterprise === 'boolean' ? o.enterprise : null,
@@ -82,7 +87,8 @@ const STAGE_SHAPES = {
     audience: isStr(o.audience, { max: 300 }) ? clean(o.audience, 300) : 'unknown',
     differentiators: arr(o.differentiators, 8).filter((x) => isStr(x, { max: 240 })).map((x) => clean(x, 240)),
     messaging_patterns: arr(o.messaging_patterns, 8).filter((x) => isStr(x, { max: 240 })).map((x) => clean(x, 240)),
-    claims_to_verify: arr(o.claims_to_verify, 8).filter((x) => isStr(x, { max: 240 })).map((x) => clean(x, 240))
+    claims_to_verify: arr(o.claims_to_verify, 8).filter((x) => isStr(x, { max: 240 })).map((x) => clean(x, 240)),
+    evidence_ids: arr(o.evidence_ids, 8).map((x) => String(x))
   })
 };
 

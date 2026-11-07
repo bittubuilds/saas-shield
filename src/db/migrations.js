@@ -810,5 +810,62 @@ module.exports = [
       );
       CREATE INDEX IF NOT EXISTS idx_cpricing_ws ON competitor_pricing(workspace_id);
     `
+  },
+  {
+    version: 11,
+    name: 'evidence-versioning-and-ai-evidence-snapshots',
+    sql: `
+      -- Evidence becomes a version chain per identity instead of an undifferentiated
+      -- append log. A row is never edited: a content change closes the previous
+      -- version (superseded_by) and a new row is inserted.
+      ALTER TABLE competitor_evidence ADD COLUMN identity_key TEXT;
+      ALTER TABLE competitor_evidence ADD COLUMN content_hash_norm TEXT;
+      ALTER TABLE competitor_evidence ADD COLUMN version INTEGER;
+      ALTER TABLE competitor_evidence ADD COLUMN observed_at TEXT;
+      ALTER TABLE competitor_evidence ADD COLUMN superseded_at TEXT;
+      ALTER TABLE competitor_evidence ADD COLUMN superseded_by TEXT;
+      ALTER TABLE competitor_evidence ADD COLUMN last_seen_at TEXT;
+      ALTER TABLE competitor_evidence ADD COLUMN observations INTEGER NOT NULL DEFAULT 1;
+
+      -- One row per distinct content per identity: recording the same observation
+      -- twice is a duplicate, not a second fact. Legacy rows (NULL identity) stay.
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_cev_content_unique
+        ON competitor_evidence(competitor_id, identity_key, content_hash_norm);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_cev_version_unique
+        ON competitor_evidence(competitor_id, identity_key, version);
+      CREATE INDEX IF NOT EXISTS idx_cev_current
+        ON competitor_evidence(workspace_id, competitor_id, superseded_at);
+      CREATE INDEX IF NOT EXISTS idx_cev_identity
+        ON competitor_evidence(competitor_id, identity_key, version DESC);
+
+      -- Exactly which evidence an AI analysis consumed, with the content hash it
+      -- consumed. This is how "changed since the last analysis" stays precise and
+      -- how a historical analysis can be re-read without guessing.
+      CREATE TABLE IF NOT EXISTS ai_analysis_evidence (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        analysis_id TEXT NOT NULL,
+        scan_id TEXT,
+        competitor_id TEXT NOT NULL,
+        evidence_kind TEXT NOT NULL
+                 CHECK (evidence_kind IN ('page','feature','plan','pricing','competitor_page')),
+        evidence_id TEXT NOT NULL,
+        source_url TEXT,
+        content_hash TEXT,
+        observed_at TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_aie_dedupe
+        ON ai_analysis_evidence(analysis_id, evidence_kind, evidence_id, content_hash);
+      CREATE INDEX IF NOT EXISTS idx_aie_competitor
+        ON ai_analysis_evidence(workspace_id, competitor_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_aie_analysis
+        ON ai_analysis_evidence(analysis_id);
+
+      -- Evidence versioning backfill: existing rows become the current version of
+      -- their identity, so no historical row is lost and no new one is invented.
+      UPDATE competitor_evidence SET observed_at = collected_at WHERE observed_at IS NULL;
+      UPDATE competitor_evidence SET last_seen_at = collected_at WHERE last_seen_at IS NULL;
+    `
   }
 ];

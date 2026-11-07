@@ -8,6 +8,9 @@ const express = require('express');
 const db = require('../db/index');
 const collect = require('../competitor/collect');
 const intel = require('../competitor/intel-store');
+const versions = require('../competitor/evidence-versions');
+const freshness = require('../competitor/freshness');
+const aiStore = require('../ai/store');
 const { requireAuth, requireWorkspace, audit, rateLimit } = require('../auth');
 
 const router = express.Router();
@@ -127,6 +130,73 @@ router.post('/workspaces/:workspaceId/competitors/:competitorId/collect', requir
   } catch (e) {
     next(e);
   }
+});
+
+// Current evidence versions plus what we know about how fresh they are.
+router.get('/workspaces/:workspaceId/competitors/:competitorId/evidence', requireWorkspace(), (req, res) => {
+  const competitor = collect.loadCompetitor(req.workspace.id, req.params.competitorId);
+  if (!competitor) return res.status(404).json({ error: 'Competitor not found.' });
+  const current = versions.currentEvidence({
+    workspaceId: req.workspace.id, competitorId: competitor.id,
+    evidenceType: typeof req.query.evidence_type === 'string' ? req.query.evidence_type : null
+  });
+  res.json({
+    competitor: { id: competitor.id, domain: competitor.domain },
+    fingerprint: versions.fingerprint({ workspaceId: req.workspace.id, competitorId: competitor.id }),
+    freshness: freshness.freshnessFor({ workspaceId: req.workspace.id, competitorId: competitor.id }),
+    recrawl: freshness.shouldRecollect({ workspaceId: req.workspace.id, competitorId: competitor.id }),
+    current: current.map((e) => ({
+      id: e.id, identity_key: e.identity_key, version: e.version, evidence_type: e.evidence_type,
+      field: e.field, excerpt: e.excerpt, source_url: e.source_url, confidence: e.confidence,
+      verification_status: e.verification_status, observed_at: e.observed_at,
+      last_seen_at: e.last_seen_at, observations: e.observations,
+      superseded_at: e.superseded_at
+    })),
+    versions: current.length
+  });
+});
+
+// Full chain for one identity, oldest first: nothing is overwritten, so this is
+// the record of how a claim changed over time.
+router.get('/workspaces/:workspaceId/competitors/:competitorId/evidence/history', requireWorkspace(), (req, res) => {
+  const competitor = collect.loadCompetitor(req.workspace.id, req.params.competitorId);
+  if (!competitor) return res.status(404).json({ error: 'Competitor not found.' });
+  const identity = typeof req.query.identity === 'string' ? req.query.identity : null;
+  const rows = identity
+    ? versions.historyFor({ workspaceId: req.workspace.id, competitorId: competitor.id, identity })
+    : versions.historyForCompetitor({ workspaceId: req.workspace.id, competitorId: competitor.id });
+  res.json({
+    competitor_id: competitor.id,
+    identity,
+    history: rows.map((e) => ({
+      id: e.id, identity_key: e.identity_key, version: e.version, excerpt: e.excerpt,
+      source_url: e.source_url, observed_at: e.observed_at, superseded_at: e.superseded_at,
+      superseded_by: e.superseded_by, observations: e.observations
+    }))
+  });
+});
+
+// AI analysis history for a competitor, with the evidence each run consumed.
+router.get('/workspaces/:workspaceId/competitors/:competitorId/ai/analyses', requireWorkspace(), (req, res) => {
+  const competitor = collect.loadCompetitor(req.workspace.id, req.params.competitorId);
+  if (!competitor) return res.status(404).json({ error: 'Competitor not found.' });
+  const stage = typeof req.query.stage === 'string' ? req.query.stage : null;
+  const rows = aiStore.analysisHistory({
+    workspaceId: req.workspace.id, competitorId: competitor.id, stage,
+    limit: Number(req.query.limit || 50)
+  });
+  res.json({
+    competitor_id: competitor.id,
+    analyses: rows.map((a) => ({
+      id: a.id, stage: a.stage, status: a.status, input_hash: a.input_hash,
+      analysis_version: a.analysis_version, prompt_version: a.prompt_version,
+      attempts: a.attempts, provider: a.provider, model: a.model, error: a.error,
+      started_at: a.started_at, finished_at: a.finished_at, created_at: a.created_at,
+      evidence: aiStore.analysisEvidence({ workspaceId: req.workspace.id, analysisId: a.id })
+        .map((e) => ({ kind: e.evidence_kind, evidence_id: e.evidence_id, source_url: e.source_url, content_hash: e.content_hash, observed_at: e.observed_at })),
+      findings: aiStore.findingsForAnalysis({ workspaceId: req.workspace.id, analysisId: a.id }).length
+    }))
+  });
 });
 
 // Feature list across collected competitors, optionally filtered by claim level.

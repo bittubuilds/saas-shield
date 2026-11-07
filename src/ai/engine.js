@@ -17,6 +17,7 @@ const provider = require('./provider');
 const prompts = require('./prompts');
 const schema = require('./schema');
 const store = require('./store');
+const evidenceSource = require('./evidence-source');
 
 const STAGES = ['overview', 'features', 'pricing', 'positioning'];
 
@@ -50,9 +51,13 @@ function evidenceFor({ workspaceId, websiteId }) {
   return scored.slice(0, limits().maxPagesPerCompetitor).map((s) => s.p);
 }
 
-function inputHash({ stage, pages, analysisVersion, promptVersion }) {
+// The hash covers exactly what a prompt would carry: the page ids and content
+// hashes, plus the structured-evidence fingerprint. Identical evidence therefore
+// produces an identical hash, which is what makes "no new model call" safe.
+function inputHash({ stage, pages, analysisVersion, promptVersion, fingerprint = '' }) {
   const parts = [stage, `v${analysisVersion}`, `p${promptVersion}`,
-    ...pages.map((p) => `${p.id}:${p.content_hash || ''}`).sort()];
+    ...pages.map((p) => `${p.id}:${p.content_hash || ''}`).sort(),
+    `fp:${fingerprint}`];
   return crypto.createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 40);
 }
 
@@ -79,28 +84,56 @@ function competitorRows({ workspaceId, scanId }) {
   };
 }
 
-function validateFindings({ stage, parsed, pages }) {
-  const allowed = new Set(pages.map((p) => p.id));
-  const urls = new Map(pages.map((p) => [p.id, p.url]));
+// What a finding may cite. Pages are always citable; structured refs are added for
+// the stages whose brief is about them, so a pricing finding cites the pricing
+// evidence it came from instead of every feature in the workspace.
+function citableIds({ stage, pages, packet }) {
+  const base = pages.map((p) => p.id);
+  if (!packet) return base;
+  if (stage === 'pricing') {
+    return [...base,
+      ...(packet.structured.pricing ? [packet.structured.pricing.ref] : []),
+      ...packet.structured.plans.map((p) => p.ref)];
+  }
+  if (stage === 'features') return [...base, ...packet.structured.features.map((f) => f.ref)];
+  return [...base, ...(packet.structured.pricing ? [packet.structured.pricing.ref] : [])];
+}
+
+function validateFindings({ stage, parsed, pages, packet = null, workspaceId = null, competitorId = null }) {
+  const fields = { workspaceId, competitorId, ids: citableIds({ stage, pages, packet }) };
+  const allowed = new Set(workspaceId ? evidenceSource.filterValidRefs(fields) : fields.ids);
+  const urls = packet ? packet.sources : new Map(pages.map((p) => [p.id, p.url]));
+  const allAllowed = [...allowed];
+
+  // A citation the model actually made is checked, not assumed: if it names
+  // evidence we did not supply (a forged id, another workspace's row) the
+  // surviving list is empty and the finding is dropped. Only when the model cites
+  // nothing at all do we attribute the stage's citable evidence, which is the
+  // pre-existing behaviour for output without ids.
+  const cited = (providedIds) => {
+    const ids = Array.isArray(providedIds) ? providedIds.map(String).filter(Boolean) : [];
+    if (!ids.length) return allAllowed;
+    return ids.filter((id) => allowed.has(id));
+  };
   const out = [];
 
   if (stage === 'features') {
     for (const f of parsed.features) {
-      const found = schema.makeFinding({ statement: f.statement || f.name, detail: f.name, claim: f.claim, confidence: f.confidence, evidence_ids: [...allowed] }, allowed);
+      const found = schema.makeFinding({ statement: f.statement || f.name, detail: f.name, claim: f.claim, confidence: f.confidence, evidence_ids: cited(f.evidence_ids) }, allowed);
       if (found) out.push({ ...found, kind: 'feature' });
     }
   } else if (stage === 'pricing') {
     for (const p of parsed.plans) {
       const found = schema.makeFinding({
         statement: `${p.name}: ${p.price}${p.interval && p.interval !== 'unknown' ? ` / ${p.interval}` : ''}`,
-        detail: p.notes, claim: p.claim, confidence: p.confidence, evidence_ids: [...allowed]
+        detail: p.notes, claim: p.claim, confidence: p.confidence, evidence_ids: cited(p.evidence_ids)
       }, allowed);
       if (found) out.push({ ...found, kind: 'pricing' });
     }
   } else if (stage === 'overview') {
     const one = (text, kind) => {
       if (!text || text === 'unknown') return null;
-      const found = schema.makeFinding({ statement: text, claim: 'explicit', confidence: 0.6, evidence_ids: [...allowed] }, allowed);
+      const found = schema.makeFinding({ statement: text, claim: 'explicit', confidence: 0.6, evidence_ids: cited(parsed.evidence_ids) }, allowed);
       return found ? { ...found, kind } : null;
     };
     out.push(one(parsed.summary, 'overview'));
@@ -110,11 +143,11 @@ function validateFindings({ stage, parsed, pages }) {
   } else if (stage === 'positioning') {
     const found = schema.makeFinding({
       statement: parsed.value_proposition !== 'unknown' ? parsed.value_proposition : null,
-      claim: 'explicit', confidence: 0.6, evidence_ids: [...allowed]
+      claim: 'explicit', confidence: 0.6, evidence_ids: cited(parsed.evidence_ids)
     }, allowed);
     if (found) out.push({ ...found, kind: 'positioning' });
     for (const d of parsed.differentiators) {
-      const f = schema.makeFinding({ statement: d, claim: 'inferred', confidence: 0.4, evidence_ids: [...allowed] }, allowed);
+      const f = schema.makeFinding({ statement: d, claim: 'inferred', confidence: 0.4, evidence_ids: cited(parsed.evidence_ids) }, allowed);
       if (f) out.push({ ...f, kind: 'differentiator' });
     }
   }
@@ -123,11 +156,21 @@ function validateFindings({ stage, parsed, pages }) {
 }
 
 async function runStage({ workspaceId, competitor, scanId, stage }) {
-  const pages = evidenceFor({ workspaceId, websiteId: competitor.website_id });
-  if (!pages.length) return { stage, status: 'skipped', reason: 'no_evidence' };
+  // Structured Phase 4 evidence first; the original-site page crawl is the
+  // fallback for a competitor whose collection has not run yet.
+  const packet = evidenceSource.collectEvidence({
+    workspaceId, competitor,
+    minChars: limits().minPageChars,
+    maxPages: limits().maxPagesPerCompetitor
+  });
+  if (!packet.hasEvidence) return { stage, status: 'skipped', reason: 'no_evidence' };
+  const pages = packet.pages;
 
   const version = prompts.ANALYSIS_VERSION;
-  const hash = inputHash({ stage, pages, analysisVersion: version, promptVersion: prompts.PROMPT_VERSION });
+  const hash = inputHash({
+    stage, pages, analysisVersion: version, promptVersion: prompts.PROMPT_VERSION,
+    fingerprint: packet.fingerprintFor(stage)
+  });
   const existing = store.findAnalysis({ workspaceId, competitorId: competitor.id, stage, inputHash: hash, analysisVersion: version });
   if (existing && existing.status === 'completed') return { stage, status: 'unchanged', analysisId: existing.id };
   if (existing && existing.status === 'failed' && Number(existing.attempts) >= limits().maxAttempts) {
@@ -175,7 +218,9 @@ async function runStage({ workspaceId, competitor, scanId, stage }) {
   }
 
   try {
-    const prompt = prompts.buildStagePrompt({ stage, competitor, pages });
+    const prompt = prompts.buildStagePrompt({
+      stage, competitor, pages, structured: packet.structured
+    });
     const result = await provider.complete({ system: prompt.system, user: prompt.user, stage });
     store.trackUsage({
       workspaceId, scanId, provider: result.provider, model: result.model,
@@ -184,7 +229,9 @@ async function runStage({ workspaceId, competitor, scanId, stage }) {
 
     const shape = schema.STAGE_SHAPES[stage];
     const parsed = shape(result.json || {});
-    const findings = validateFindings({ stage, parsed, pages });
+    const findings = validateFindings({
+      stage, parsed, pages, packet, workspaceId, competitorId: competitor.id
+    });
     for (const f of findings) {
       store.addFinding({
         workspaceId, competitorId: competitor.id, scanId, analysisId: analysis.id,
@@ -192,6 +239,30 @@ async function runStage({ workspaceId, competitor, scanId, stage }) {
         confidence: f.confidence, evidenceIds: f.evidence_ids, sourceUrls: f.sources
       });
     }
+    // Snapshot the exact evidence (and content hashes) this analysis consumed.
+    // This is what makes "changed since the last analysis" precise and keeps a
+    // historical analysis readable after the evidence moves on.
+    store.snapshotAnalysisEvidence({
+      workspaceId, scanId, competitorId: competitor.id, analysisId: analysis.id,
+      items: [
+        ...packet.pages.map((p) => ({
+          kind: p.kind, id: p.id, url: p.url, contentHash: p.content_hash, observedAt: p.observed_at
+        })),
+        ...packet.structured.features.map((f) => ({
+          kind: 'feature', id: f.ref, url: f.source_url,
+          contentHash: `claim:${f.claim_level}`, observedAt: f.observed_at
+        })),
+        ...packet.structured.plans.map((p) => ({
+          kind: 'plan', id: p.ref, url: p.source_url,
+          contentHash: `price:${p.price_stated ? p.price_value : 'unstated'}`, observedAt: p.observed_at
+        })),
+        ...(packet.structured.pricing ? [{
+          kind: 'pricing', id: packet.structured.pricing.ref, url: packet.structured.pricing.source_url,
+          contentHash: `summary:${packet.structured.pricing.starting_price_value}:${packet.structured.pricing.free_plan}`,
+          observedAt: null
+        }] : [])
+      ]
+    });
     store.markAnalysis(analysis.id, {
       status: 'completed', finished_at: new Date().toISOString(),
       tokens_in: result.usage.tokens_in, tokens_out: result.usage.tokens_out
@@ -247,4 +318,4 @@ async function runScanAI({ workspaceId, scanId }) {
   };
 }
 
-module.exports = { runScanAI, analyzeCompetitor, evidenceFor, inputHash, STAGES, competitorRows, limits, validateFindings };
+module.exports = { runScanAI, analyzeCompetitor, evidenceFor, inputHash, STAGES, competitorRows, limits, validateFindings, citableIds };

@@ -14,6 +14,7 @@ const crawler = require('../crawler');
 const config = require('../config');
 const db = require('../db/index');
 const store = require('./store');
+const versions = require('./evidence-versions');
 const intel = require('./intel-store');
 const deepCrawl = require('./deep-crawl');
 const featureExtract = require('./extract-features');
@@ -156,12 +157,15 @@ async function collectCompetitor({
   const features = featureExtract.extractAll(pages);
   let featuresSaved = 0;
   for (const feature of features) {
-    const evidenceId = store.recordEvidence({
+    // Versioned write: identical content is a duplicate sighting, changed wording
+    // becomes a new version, and the previous version keeps its own record.
+    const evidence = versions.recordVersion({
       workspaceId, competitorId, pageId: feature.page_id, sourceUrl: feature.source_url,
       evidenceType: 'feature_claim', field: `feature:${feature.identity_key}`,
-      excerpt: feature.evidence_excerpt, contentHash: feature.content_hash,
-      confidence: feature.confidence, verificationStatus: feature.verification_status
+      excerpt: feature.evidence_excerpt, confidence: feature.confidence,
+      verificationStatus: feature.verification_status
     });
+    const evidenceId = evidence.id;
     const saved = intel.saveFeature({
       workspaceId, competitorId, pageId: feature.page_id, crawlId,
       sourceUrl: feature.source_url, pageType: feature.page_type,
@@ -175,10 +179,10 @@ async function collectCompetitor({
     // Pages that mentioned the same feature are recorded as supporting evidence,
     // so a deduped feature still shows every place it was seen.
     for (const support of feature.support) {
-      store.recordEvidence({
+      versions.recordVersion({
         workspaceId, competitorId, pageId: support.page_id, sourceUrl: support.source_url,
         evidenceType: 'feature_mention', field: `feature:${feature.identity_key}`,
-        excerpt: support.evidence_excerpt, contentHash: support.content_hash,
+        excerpt: support.evidence_excerpt,
         confidence: support.confidence, verificationStatus: support.verification_status
       });
     }
@@ -187,12 +191,12 @@ async function collectCompetitor({
   const { plans, summary } = pricingExtract.extractAll(pages);
   let plansSaved = 0;
   for (const plan of plans) {
-    const evidenceId = store.recordEvidence({
+    const evidence = versions.recordVersion({
       workspaceId, competitorId, pageId: plan.page_id, sourceUrl: plan.source_url,
       evidenceType: 'pricing_plan', field: `plan:${plan.identity_key}`,
-      excerpt: plan.original_text, contentHash: plan.content_hash,
-      confidence: plan.confidence, verificationStatus: 'observed'
+      excerpt: plan.original_text, confidence: plan.confidence, verificationStatus: 'observed'
     });
+    const evidenceId = evidence.id;
     const saved = intel.savePlan({
       workspaceId, competitorId, pageId: plan.page_id, crawlId,
       sourceUrl: plan.source_url, identityKey: plan.identity_key,
@@ -241,6 +245,7 @@ async function collectCompetitor({
     duplicates: results.filter((r) => r.duplicate_of).length,
     features: features.length,
     features_saved: featuresSaved,
+    evidence_versions: versions.currentEvidence({ workspaceId, competitorId }).length,
     plans: plans.length,
     plans_saved: plansSaved,
     pricing: summary,

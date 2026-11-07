@@ -11,7 +11,7 @@
 
 const crypto = require('node:crypto');
 
-const PROMPT_VERSION = 3;
+const PROMPT_VERSION = 4;
 const ANALYSIS_VERSION = 1;
 
 const SYSTEM_BASE = `You are an analyst extracting factual observations about a software product from web pages it publishes.
@@ -48,10 +48,56 @@ function evidenceBlock({ pages, delimiter }) {
   ].join('\n')).join('\n\n');
 }
 
-function buildStagePrompt({ stage, competitor, pages, delimiter = crypto.randomUUID() }) {
+// Structured evidence was already extracted from the same pages (Phase 4), so it
+// is given as its own block with its own citable ids. It is not a substitute for
+// the page text: the model still has to cite something, and a claim that is not in
+// the block or the text cannot be cited.
+function structuredBlock({ structured, delimiter }) {
+  if (!structured) return '';
+  const lines = [];
+  if (structured.pricing) {
+    const p = structured.pricing;
+    const free = p.free_plan === 1 ? 'yes' : (p.free_plan === 0 ? 'no' : 'unknown');
+    lines.push(`--- ${delimiter} structured pricing ${p.ref}`,
+      `HAS PRICING EVIDENCE: ${p.has_pricing_evidence ? 'yes' : 'no'}`,
+      `STARTING PRICE: ${p.starting_price_display || 'unknown'} (value ${p.starting_price_value === null || p.starting_price_value === undefined ? 'unknown' : p.starting_price_value}${p.currency ? ` ${p.currency}` : ''})`,
+      `BILLING: ${p.billing_interval || 'unknown'}`,
+      `FREE PLAN: ${free}`,
+      `FREE TRIAL: ${p.free_trial === 1 ? `yes (${p.trial_days || 'unstated'} days)` : (p.free_trial === 0 ? 'no' : 'unknown')}`,
+      `USAGE-BASED: ${p.usage_based === 1 ? 'yes' : (p.usage_based === 0 ? 'no' : 'unknown')}`,
+      `ENTERPRISE/CUSTOM: ${p.enterprise_custom === 1 ? 'yes' : (p.enterprise_custom === 0 ? 'no' : 'unknown')}`,
+      `PLANS: ${p.plans_count}`);
+  }
+  if (structured.plans && structured.plans.length) {
+    for (const pl of structured.plans) {
+      lines.push(`--- ${delimiter} structured plan ${pl.ref}`,
+        `PLAN: ${pl.plan_name}`,
+        `PRICE: ${pl.price_stated ? (pl.price_display || 'stated') : 'not stated'}`,
+        `INTERVAL: ${pl.billing_interval}`,
+        `FREE: ${pl.free_plan === 1 ? 'yes' : 'unknown'}`,
+        `TRIAL DAYS: ${pl.trial_days === null || pl.trial_days === undefined ? 'unknown' : pl.trial_days}`);
+    }
+  }
+  if (structured.features && structured.features.length) {
+    for (const f of structured.features) {
+      lines.push(`--- ${delimiter} structured feature ${f.ref}`,
+        `FEATURE: ${f.name}`,
+        `CLAIM LEVEL: ${f.claim_level}`,
+        `CATEGORY: ${f.category || 'unknown'}`);
+    }
+  }
+  return lines.length ? `\nSTRUCTURED EVIDENCE (already extracted; cite its ids too):\n${lines.join('\n')}` : '';
+}
+
+function buildStagePrompt({ stage, competitor, pages, structured = null, delimiter = crypto.randomUUID() }) {
   const brief = STAGE_BRIEF[stage];
   if (!brief) throw new Error(`unknown stage: ${stage}`);
-  const ids = pages.map((p) => p.id).join(', ');
+  const ids = [
+    ...pages.map((p) => p.id),
+    ...(structured && structured.pricing ? [structured.pricing.ref] : []),
+    ...((structured && structured.plans) || []).map((p) => p.ref),
+    ...((structured && structured.features) || []).map((f) => f.ref)
+  ].join(', ');
   const user = `Competitor: ${competitor.name || competitor.domain} (${competitor.domain})
 
 ${brief}
@@ -59,7 +105,7 @@ ${brief}
 Cite evidence using these ids exactly: ${ids}
 
 <<<BEGIN UNTRUSTED DATA ${delimiter}>>>
-${evidenceBlock({ pages, delimiter })}
+${evidenceBlock({ pages, delimiter })}${structuredBlock({ structured, delimiter })}
 <<<END UNTRUSTED DATA ${delimiter}>>>`;
   return { system: SYSTEM_BASE, user, delimiter, promptVersion: PROMPT_VERSION };
 }
