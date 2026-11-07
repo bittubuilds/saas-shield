@@ -11,6 +11,11 @@ const intel = require('../competitor/intel-store');
 const versions = require('../competitor/evidence-versions');
 const freshness = require('../competitor/freshness');
 const aiStore = require('../ai/store');
+const shotStore = require('../screenshots/store');
+const shotBrowser = require('../screenshots/browser');
+const { getStorage } = require('../storage');
+const vision = require('../ai/vision');
+const shotConfig = require('../config').screenshots;
 const { requireAuth, requireWorkspace, audit, rateLimit } = require('../auth');
 
 const router = express.Router();
@@ -129,6 +134,87 @@ router.post('/workspaces/:workspaceId/competitors/:competitorId/collect', requir
     res.status(result.ok ? 200 : 502).json(result);
   } catch (e) {
     next(e);
+  }
+});
+
+// Screenshot capability, so a client can say what is and is not available before
+// offering a "view screenshot" affordance.
+router.get('/workspaces/:workspaceId/screenshots/capability', requireWorkspace(), (req, res) => {
+  const cap = shotBrowser.capability();
+  let storage = null;
+  try {
+    const s = getStorage({ provider: shotConfig.storageProvider, dir: shotConfig.dir });
+    storage = s.describe();
+  } catch (e) {
+    storage = { provider: shotConfig.storageProvider, durable: false, error: e.message };
+  }
+  res.json({
+    enabled: shotConfig.enabled,
+    browser: cap,
+    storage,
+    limits: {
+      max_per_competitor: shotConfig.maxPerCompetitor,
+      concurrency: shotConfig.concurrency,
+      timeout_ms: shotConfig.timeoutMs,
+      max_bytes: shotConfig.maxBytes
+    },
+    // Capture and analysis are different features; say so in the API itself.
+    analysis: vision.capability()
+  });
+});
+
+// Screenshot metadata for one competitor. No image bytes, no visual claims.
+router.get('/workspaces/:workspaceId/competitors/:competitorId/screenshots', requireWorkspace(), (req, res) => {
+  const competitor = collect.loadCompetitor(req.workspace.id, req.params.competitorId);
+  if (!competitor) return res.status(404).json({ error: 'Competitor not found.' });
+  let storage = null;
+  try {
+    storage = getStorage({ provider: shotConfig.storageProvider, dir: shotConfig.dir }).describe();
+  } catch (e) {
+    storage = { provider: shotConfig.storageProvider, durable: false, error: e.message };
+  }
+  const rows = shotStore.screenshotsFor({
+    workspaceId: req.workspace.id, competitorId: competitor.id,
+    pageType: typeof req.query.page_type === 'string' ? req.query.page_type : null
+  });
+  res.json({
+    competitor_id: competitor.id,
+    durability: { durable: Boolean(storage && storage.durable), warning: storage && storage.warning },
+    analysis: vision.capability(),
+    summary: shotStore.summaryFor({ workspaceId: req.workspace.id, competitorId: competitor.id }),
+    screenshots: rows.map((r) => ({
+      id: r.id, url: r.url, page_type: r.page_type, status: r.status, reason: r.reason,
+      content_hash: r.content_hash, storage_provider: r.storage_provider,
+      storage_reference: r.storage_key, bytes: r.bytes, width: r.width, height: r.height,
+      duration_ms: r.duration_ms, captured_at: r.captured_at,
+      duplicate_of: r.duplicate_of, page_id: r.page_id
+    }))
+  });
+});
+
+// One image, streamed from whatever provider captured it. Durable nowhere: if the
+// file is gone (a redeploy on an ephemeral host) this is a 410, not a 404 mystery.
+router.get('/workspaces/:workspaceId/competitors/:competitorId/screenshots/:shotId/image', requireWorkspace(), async (req, res) => {
+  const competitor = collect.loadCompetitor(req.workspace.id, req.params.competitorId);
+  if (!competitor) return res.status(404).json({ error: 'Competitor not found.' });
+  const shot = shotStore.screenshotFor({ workspaceId: req.workspace.id, id: req.params.shotId });
+  if (!shot || shot.competitor_id !== competitor.id) return res.status(404).json({ error: 'Screenshot not found.' });
+  if (!shot.storage_key) return res.status(409).json({ error: 'This screenshot has no stored image.', status: shot.status, reason: shot.reason });
+  try {
+    const storage = getStorage({ provider: shot.storage_provider || shotConfig.storageProvider, dir: shotConfig.dir });
+    const blob = await storage.get(shot.storage_key);
+    res.setHeader('content-type', 'image/png');
+    res.setHeader('cache-control', 'private, max-age=300');
+    res.setHeader('content-length', String(blob.buffer.length));
+    return res.end(blob.buffer);
+  } catch (e) {
+    if (e.code === 'STORAGE_NOT_FOUND') {
+      return res.status(410).json({
+        error: 'Screenshot image is no longer available in storage.',
+        hint: 'Local or ephemeral storage does not survive a redeploy; recapture to restore it.'
+      });
+    }
+    return res.status(500).json({ error: 'Screenshot storage error.' });
   }
 });
 

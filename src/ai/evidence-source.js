@@ -18,6 +18,8 @@ const crypto = require('node:crypto');
 const db = require('../db/index');
 const intel = require('../competitor/intel-store');
 const versions = require('../competitor/evidence-versions');
+const shotStore = require('../screenshots/store');
+const vision = require('./vision');
 
 const CLAIM_ORDER = { documented: 4, marketing: 3, inferred: 2, unverified: 1 };
 
@@ -135,6 +137,24 @@ function collectEvidence({ workspaceId, competitor, minChars = 80, maxPages = 3 
   const hasStructured = structured.features.length > 0 || structured.plans.length > 0 || Boolean(structured.pricing);
   if (!source && hasStructured) source = 'structured_only';
 
+  // Screenshot metadata is reported but never citable: a text-only model cannot
+  // have seen the image, so no finding may rest on it. These rows make capture
+  // visible in the packet without inventing visual evidence.
+  const visuals = competitorId
+    ? shotStore.latestPerType({ workspaceId, competitorId }).map((r) => ({
+      id: r.id,
+      page_type: r.page_type,
+      url: r.url,
+      width: r.width,
+      height: r.height,
+      captured_at: r.captured_at,
+      content_hash: r.content_hash,
+      storage_provider: r.storage_provider,
+      storage_reference: r.storage_key
+    }))
+    : [];
+  const visualCapability = vision.capability();
+
   const allowedRefs = new Set([
     ...pages.map((p) => p.id),
     ...structured.features.map((f) => f.ref),
@@ -170,6 +190,8 @@ function collectEvidence({ workspaceId, competitor, minChars = 80, maxPages = 3 
   return {
     pages,
     structured,
+    visuals,
+    vision: visualCapability,
     allowedRefs,
     sources,
     fingerprint,

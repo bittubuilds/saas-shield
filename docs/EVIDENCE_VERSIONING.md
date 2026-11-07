@@ -124,6 +124,7 @@ Code: `src/ai/evidence-source.js`, with the engine in `src/ai/engine.js`.
 | `feature` | current `competitor_features` | feature id |
 | `plan` | current `competitor_plans` | plan id |
 | `pricing` | `competitor_pricing` summary | `cpricing_<competitor>` |
+| screenshot metadata | `competitor_screenshots` (latest per page type) | none: reported, never citable |
 
 Collected Phase 4 pages are preferred over the older crawl; the crawl is only
 used when a competitor has no collected pages yet. `prompts.js` renders the
@@ -156,6 +157,15 @@ an old analysis can be read back with the evidence it rested on.
 
 `GET /api/workspaces/:w/competitors/:c/ai/analyses` returns the history with each
 run's evidence and finding count.
+
+### Screenshots are evidence metadata, not visual evidence
+
+A capture records an evidence version with `evidence_type = 'screenshot'` and an
+excerpt that describes the capture (page type, URL, size, hash prefix). The AI
+packet carries the same rows as `visuals[]` for reporting only. They are excluded
+from `allowedRefs` and from every stage fingerprint: an image cannot support a
+finding, and appearing does not change a text analysis. See
+[SCREENSHOTS.md](./SCREENSHOTS.md) for the capture layer and the durability warning.
 
 ### Evidence references are validated
 

@@ -89,7 +89,16 @@ function structuredBlock({ structured, delimiter }) {
   return lines.length ? `\nSTRUCTURED EVIDENCE (already extracted; cite its ids too):\n${lines.join('\n')}` : '';
 }
 
-function buildStagePrompt({ stage, competitor, pages, structured = null, delimiter = crypto.randomUUID() }) {
+// Screenshots are mentioned so an operator reading a prompt can see they exist, and
+// so the model is told they are NOT evidence it has seen. They are not citable and
+// not part of any stage brief.
+function visualsBlock({ visuals }) {
+  if (!visuals || !visuals.length) return '';
+  const lines = visuals.map((v) => `- ${v.page_type} page ${v.url} captured ${v.captured_at} (${v.width}x${v.height}, sha256:${String(v.content_hash || '').slice(0, 12)})`);
+  return `\nSCREENSHOTS CAPTURED (metadata only - these images were NOT provided to you and must not be described):\n${lines.join('\n')}`;
+}
+
+function buildStagePrompt({ stage, competitor, pages, structured = null, visuals = null, delimiter = crypto.randomUUID() }) {
   const brief = STAGE_BRIEF[stage];
   if (!brief) throw new Error(`unknown stage: ${stage}`);
   const ids = [
@@ -103,6 +112,7 @@ function buildStagePrompt({ stage, competitor, pages, structured = null, delimit
 ${brief}
 
 Cite evidence using these ids exactly: ${ids}
+${visualsBlock({ visuals })}
 
 <<<BEGIN UNTRUSTED DATA ${delimiter}>>>
 ${evidenceBlock({ pages, delimiter })}${structuredBlock({ structured, delimiter })}

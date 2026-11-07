@@ -219,7 +219,7 @@ async function runStage({ workspaceId, competitor, scanId, stage }) {
 
   try {
     const prompt = prompts.buildStagePrompt({
-      stage, competitor, pages, structured: packet.structured
+      stage, competitor, pages, structured: packet.structured, visuals: packet.visuals
     });
     const result = await provider.complete({ system: prompt.system, user: prompt.user, stage });
     store.trackUsage({

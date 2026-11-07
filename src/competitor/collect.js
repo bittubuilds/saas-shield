@@ -19,6 +19,7 @@ const intel = require('./intel-store');
 const deepCrawl = require('./deep-crawl');
 const featureExtract = require('./extract-features');
 const pricingExtract = require('./extract-pricing');
+const screenshots = require('../screenshots/capture');
 const { newId, utcNow } = require('../util');
 
 function loadCompetitor(workspaceId, competitorId) {
@@ -51,7 +52,10 @@ async function collectCompetitor({
   fetchPage: fetchPageOption = null, useSitemaps = true,
   maxPages = config.competitorIntel.maxPages,
   maxPerType = config.competitorIntel.maxPerType,
-  staleAfterMs = config.competitorIntel.staleAfterMs
+  staleAfterMs = config.competitorIntel.staleAfterMs,
+  // Screenshot capture is injectable so tests never need a browser, and can be
+  // switched off entirely without touching the text pipeline.
+  screenshotOptions = null
 }) {
   const fetchPage = typeof fetchPageOption === 'function' ? fetchPageOption : crawler.fetchPage;
   const competitor = loadCompetitor(workspaceId, competitorId);
@@ -225,6 +229,27 @@ async function collectCompetitor({
     confidence: summary.confidence
   });
 
+  // --- screenshots (optional, isolated) --------------------------------------
+  // This block is deliberately last and doubly guarded: capture has its own
+  // timeouts and catches everything, and this try/catch exists so a future bug in
+  // it still cannot turn a successful text collection into a failed one.
+  const shotOptions = screenshotOptions || {};
+  let shots = { enabled: false, reason: 'screenshots_disabled', results: [] };
+  // Injecting the capture implementation keeps the isolation guarantee testable:
+  // a broken capture subsystem must not be able to fail this function.
+  const captureImpl = shotOptions.captureImpl || screenshots.captureFor;
+  try {
+    shots = await captureImpl({
+      workspaceId, competitorId, pages,
+      settings: shotOptions.settings || undefined,
+      storage: shotOptions.storage || null,
+      provider: shotOptions.provider || null,
+      enabled: shotOptions.enabled === undefined ? config.screenshots.enabled : Boolean(shotOptions.enabled)
+    });
+  } catch (e) {
+    shots = { enabled: true, reason: 'capture_error', error: e && e.message ? e.message : 'unknown', results: [] };
+  }
+
   const totals = deepCrawl.summarise(results);
   // A failure on the only page we had, or no page at all, is a failed run;
   // anything in between is honestly partial.
@@ -251,7 +276,20 @@ async function collectCompetitor({
     pricing: summary,
     failures,
     sitemap_error: seeds.error,
-    site_url: homepageUrl
+    site_url: homepageUrl,
+    screenshots: {
+      enabled: Boolean(shots.enabled),
+      reason: shots.reason || null,
+      error: shots.error || null,
+      captured: shots.captured || 0,
+      duplicates: shots.duplicates || 0,
+      failed: shots.failed || 0,
+      unavailable: shots.unavailable || 0,
+      targets: shots.targets || 0,
+      duration_ms: shots.duration_ms || null,
+      // Says plainly that this is capture, not analysis.
+      analysis: 'none: screenshots are stored, never interpreted'
+    }
   };
 }
 
@@ -270,7 +308,9 @@ function intelligenceFor({ workspaceId, competitorId, includeHistory = false }) 
     plans: intel.plansFor({ workspaceId, competitorId, includeHistory }),
     pricing: intel.pricingFor({ workspaceId, competitorId }),
     evidence_count: db.prepare('SELECT COUNT(*) c FROM competitor_evidence WHERE workspace_id=? AND competitor_id=?')
-      .get(workspaceId, competitorId).c
+      .get(workspaceId, competitorId).c,
+    screenshots: require('../screenshots/store').screenshotsFor({ workspaceId, competitorId, limit: 20 }),
+    screenshot_summary: require('../screenshots/store').summaryFor({ workspaceId, competitorId })
   };
 }
 

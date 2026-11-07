@@ -5,11 +5,14 @@ already stored and produces cited findings plus a versioned report. It is
 strictly additive: the deterministic similarity engine, the existing report
 route and the PDF export are unchanged.
 
-**Scope note.** Phase 4 (screenshots and visual evidence) is not implemented in
-this repository. There is no browser automation and no `screenshots` table, so
-this engine analyses page **text** evidence only. Nothing here claims visual
-analysis, and the existing report already states that visual similarity is not
-measured.
+**Scope note.** Screenshot capture exists (see
+[SCREENSHOTS.md](./SCREENSHOTS.md)), but this engine analyses page **text**
+evidence only. Screenshot metadata reaches the packet as an explicitly
+non-citable `visuals` list: the prompt says the images were not provided, no
+finding may cite one, and `src/ai/vision.js` reports
+`supports_image_input: false, tested: false` because the configured model is used
+through a text-only path. Nothing here claims visual analysis, and the existing
+report still states that visual similarity is not measured.
 
 **Evidence input.** The engine now reads Phase 4 structured evidence (collected
 pages, current feature claims, current pricing plans and the pricing summary) and

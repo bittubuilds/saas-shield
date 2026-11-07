@@ -97,6 +97,32 @@ const config = {
     pageTypes: ['homepage', 'pricing', 'features', 'product', 'docs', 'about', 'blog']
   },
 
+  // Phase 4 screenshot capture. Off by default: a headless browser is not present
+  // on every host (it is not on a Render free instance), and an optional visual
+  // feature must never be the reason text collection fails. Enable it where a
+  // Chromium build exists, e.g. SHOT_ENABLED=true on a local machine or a worker.
+  screenshots: {
+    enabled: bool(env.SHOT_ENABLED, false),
+    storageProvider: env.SHOT_STORAGE || 'local',
+    dir: env.SHOT_DIR || path.join(__dirname, '..', 'data', 'screenshots'),
+    // Bounded on purpose: a competitor costs at most maxPerCompetitor captures,
+    // never more than concurrency at once, each with its own hard timeout.
+    maxPerCompetitor: num(env.SHOT_MAX_PER_COMPETITOR, 4),
+    concurrency: num(env.SHOT_CONCURRENCY, 1),
+    timeoutMs: num(env.SHOT_TIMEOUT_MS, 15000),
+    navigationTimeoutMs: num(env.SHOT_NAV_TIMEOUT_MS, 12000),
+    maxBytes: num(env.SHOT_MAX_BYTES, 2 * 1024 * 1024),
+    viewport: {
+      width: num(env.SHOT_VIEWPORT_WIDTH, 1280),
+      height: num(env.SHOT_VIEWPORT_HEIGHT, 900)
+    },
+    fullPage: bool(env.SHOT_FULL_PAGE, false),
+    // A full-page capture of a long page is a memory risk; the clip is capped.
+    maxHeight: num(env.SHOT_MAX_HEIGHT, 2400),
+    pageTypes: ['homepage', 'pricing', 'product', 'features'],
+    browserArgs: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+  },
+
   ssrf: {
     // Only for local development and automated tests. Production must keep false.
     allowPrivateIps: bool(env.SHIELD_ALLOW_PRIVATE_IPS, false)

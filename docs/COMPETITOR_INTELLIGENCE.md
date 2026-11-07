@@ -4,6 +4,9 @@ Text-only, deterministic collection of what a competitor publicly says about its
 own product and pricing. No model is called in this phase: the AI engine (Phase 5)
 reads what this layer stored, and screenshots are explicitly out of scope.
 
+Collection ends with an optional screenshot pass (off by default, never able to
+fail a crawl): [SCREENSHOTS.md](./SCREENSHOTS.md).
+
 Evidence is versioned and freshness-tracked between collection and analysis; see
 [EVIDENCE_VERSIONING.md](./EVIDENCE_VERSIONING.md) for the hashing, duplicate,
 version-chain and freshness rules.

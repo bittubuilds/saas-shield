@@ -867,5 +867,48 @@ module.exports = [
       UPDATE competitor_evidence SET observed_at = collected_at WHERE observed_at IS NULL;
       UPDATE competitor_evidence SET last_seen_at = collected_at WHERE last_seen_at IS NULL;
     `
+  },
+  {
+    version: 12,
+    name: 'competitor-screenshots',
+    sql: `
+      -- A screenshot row is metadata about a captured image, never the image itself
+      -- (bytes live in the configured storage provider). Status records what happened
+      -- so a failed capture is visible instead of looking like "no screenshot yet".
+      CREATE TABLE IF NOT EXISTS competitor_screenshots (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        competitor_id TEXT NOT NULL,
+        page_id TEXT,
+        url TEXT NOT NULL,
+        page_type TEXT NOT NULL,
+        status TEXT NOT NULL
+                 CHECK (status IN ('captured','duplicate','failed','skipped','unavailable')),
+        reason TEXT,
+        content_hash TEXT,
+        storage_provider TEXT,
+        storage_key TEXT,
+        storage_url TEXT,
+        bytes INTEGER,
+        width INTEGER,
+        height INTEGER,
+        duration_ms INTEGER,
+        captured_at TEXT,
+        duplicate_of TEXT,
+        capture_version INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      -- Deduplication: the same image for the same competitor is stored once. The
+      -- hash is the image bytes, so a re-render that differs by a pixel is a new row.
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_shot_hash_unique
+        ON competitor_screenshots(competitor_id, content_hash)
+        WHERE content_hash IS NOT NULL AND status = 'captured';
+      CREATE INDEX IF NOT EXISTS idx_shot_competitor
+        ON competitor_screenshots(workspace_id, competitor_id, page_type, captured_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_shot_workspace
+        ON competitor_screenshots(workspace_id, created_at DESC);
+    `
   }
 ];
