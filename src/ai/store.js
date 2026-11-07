@@ -142,11 +142,20 @@ function latestReport({ workspaceId, scanId }) {
   return { ...row, competitors: JSON.parse(row.competitors), evidence_snapshot: JSON.parse(row.evidence_snapshot), body: JSON.parse(row.body) };
 }
 
+// One specific stored version, for reproducible exports. Historical reports are
+// never rewritten, so a version resolved once keeps printing the same content.
+function reportByVersion({ workspaceId, scanId, version }) {
+  const row = db.prepare('SELECT * FROM ai_reports WHERE workspace_id=? AND scan_id=? AND version=?')
+    .get(workspaceId, scanId, Number(version));
+  if (!row) return null;
+  return { ...row, competitors: JSON.parse(row.competitors), evidence_snapshot: JSON.parse(row.evidence_snapshot), body: JSON.parse(row.body) };
+}
+
 function reportHistory({ workspaceId, scanId }) {
   return db.prepare('SELECT id, version, status, provider, model, analysis_version, created_at FROM ai_reports WHERE workspace_id=? AND scan_id=? ORDER BY version DESC').all(workspaceId, scanId);
 }
 
 module.exports = {
   findAnalysis, createAnalysis, claimAnalysis, markAnalysis, addFinding, findingsFor, trackUsage,
-  requestsForScan, requestsToday, analysesFor, saveReport, latestReport, reportHistory
+  requestsForScan, requestsToday, analysesFor, saveReport, latestReport, reportByVersion, reportHistory
 };

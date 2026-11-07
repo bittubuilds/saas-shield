@@ -150,9 +150,42 @@ not a member of, or a scan outside it.
 | POST | `/api/workspaces/:w/scans/:s/ai` | run or resume analysis, then synthesize if complete (rate limited: 6/min) |
 | GET | `/api/workspaces/:w/scans/:s/ai/findings` | findings with evidence ids and source URLs |
 | GET | `/api/workspaces/:w/scans/:s/ai/report` | latest report plus version history |
+| GET | `/api/workspaces/:w/scans/:s/ai/report.pdf` | PDF of the newest report, or `?version=N` for a stored one |
 
 POST is idempotent in effect: running it twice on unchanged evidence makes no
 provider calls and creates no duplicate findings.
+
+### PDF export of an AI report
+
+`GET .../ai/report.pdf` renders a stored `ai_reports` row through
+`src/pdf/ai-report-pdf.js`. It is a pure formatter: it prints what the pipeline
+recorded and never derives a new claim, price or competitor.
+
+Sections: executive summary, competitor overview, feature comparison, pricing
+comparison, positioning, competitive gaps, SWOT-style findings, actionable
+opportunities, evidence and sources, confidence and limitations. When more than
+one version exists the document also lists the report history.
+
+Layout rules worth keeping:
+
+* Every finding prints its provenance (`FACT (stated on the page)`,
+  `INFERENCE (not stated outright)`, `UNVERIFIED (not confirmed by evidence)`),
+  its confidence and the evidence ids it was validated against.
+* A missing section says so ("Not available...", "No pricing evidence was
+  collected for this scan, so no prices are shown."). It is never smoothed over,
+  and no price is ever inferred from another competitor.
+* `coverage.competitors_without_findings` produces an explicit "Partial coverage"
+  block, because absence of a finding is not evidence of absence of a feature.
+* If no report exists the route returns `404` with `code: "no_report"` and the
+  analysis `state`, so a client can show "pending"/"paused"/"failed" instead of
+  downloading a blank document.
+* `?version=N` exports a specific stored version; versions are append-only so an
+  old export keeps printing the same content. A non-numeric version is `400`.
+* Non-ASCII text is transliterated and parentheses/backslashes escaped, so page
+  text that contains PDF operators cannot break out of the content stream.
+
+Both exports share `src/pdf/engine.js`. The deterministic report's byte output is
+pinned by a golden-hash test so the shared engine cannot drift it.
 
 ## 8. Manual provider check
 

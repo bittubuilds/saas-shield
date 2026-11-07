@@ -8,6 +8,7 @@ const provider = require('../ai/provider');
 const engine = require('../ai/engine');
 const synth = require('../ai/synthesize');
 const store = require('../ai/store');
+const { renderAiReportPdf } = require('../pdf/ai-report-pdf');
 const { rateLimit } = require('../auth');
 
 const router = express.Router();
@@ -101,6 +102,40 @@ router.get('/workspaces/:workspaceId/scans/:scanId/ai/report', requireWorkspaceR
   const report = store.latestReport({ workspaceId, scanId: req.params.scanId });
   if (!report) return res.status(404).json({ error: 'No AI report yet.', code: 'no_report' });
   res.json({ report, history: store.reportHistory({ workspaceId, scanId: req.params.scanId }) });
+});
+
+// PDF export of the AI report. Defaults to the newest version; ?version=N exports
+// a specific stored one so an old report can be reproduced after newer runs.
+router.get('/workspaces/:workspaceId/scans/:scanId/ai/report.pdf', requireWorkspaceRoute(), (req, res) => {
+  const workspaceId = req.workspace.id;
+  const scanId = req.params.scanId;
+  if (!scanInWorkspace(workspaceId, scanId)) return res.status(404).json({ error: 'Scan not found.' });
+
+  let report;
+  if (req.query.version !== undefined) {
+    if (!/^\d+$/.test(String(req.query.version))) return res.status(400).json({ error: 'version must be a positive integer.' });
+    report = store.reportByVersion({ workspaceId, scanId, version: req.query.version });
+    if (!report) return res.status(404).json({ error: 'Report version not found.', code: 'no_report' });
+  } else {
+    report = store.latestReport({ workspaceId, scanId });
+    // No report is a state, not an empty document: the client shows "analysis
+    // pending" from this response rather than downloading a blank PDF.
+    if (!report) {
+      const status = statusPayload({ workspaceId, scanId });
+      return res.status(404).json({ error: 'No AI report yet.', code: 'no_report', state: status.status, counts: status.counts });
+    }
+  }
+
+  const workspace = db.prepare('SELECT name FROM workspaces WHERE id=?').get(workspaceId);
+  const pdf = renderAiReportPdf({
+    workspaceName: workspace ? workspace.name : null,
+    scanId,
+    report,
+    history: store.reportHistory({ workspaceId, scanId })
+  });
+
+  res.attachment(`saas-shield-ai-report-v${report.version}-${Date.now()}.pdf`);
+  res.type('application/pdf').send(pdf);
 });
 
 // Lazy require avoids a circular dependency: auth.js loads routes indirectly.
