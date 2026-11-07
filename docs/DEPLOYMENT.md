@@ -254,3 +254,17 @@ Durable production setup:
 5. Take a snapshot before any migration: `npm run db:backup`.
 
 Full detail: `docs/DATABASE_DURABILITY_REPORT.md`.
+
+## Neon (durable PostgreSQL) — verified setup
+
+The data plane (port 5432) is blocked in some sandboxes and CI runners, while Neon's
+HTTPS endpoint is not. `node tools/neon-migrate.js` applies the same migrations over
+HTTPS and records them in `schema_migrations`, so an environment that cannot open
+5432 can still prepare the database.
+
+Verified 7 Nov 2026 on project `sweet-shape-29779616` (org Bittu, aws-ap-southeast-1,
+branch `main`, database `neondb`): 7 migrations, 27 tables, PostgreSQL 18.6.
+
+Server runtime is unchanged: with `DATABASE_URL` set, `src/db/index.js` applies any
+pending migration on boot through the normal pg adapter. Set the variable on the host;
+never commit a connection string.
