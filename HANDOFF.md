@@ -1,7 +1,7 @@
 # HANDOFF — SaaS Shield
 
-Last updated: 8 November 2026
-Branch: `feat/db-durability` · HEAD: `249aa15` · Working tree: clean
+Last updated: 8 November 2026 (post-merge)
+Branch: `feat/db-durability` (merged to `main`) · `main` = `32d1af4` · Working tree: clean
 
 This file is the entry point for any agent or developer picking the project up.
 Every claim below is tagged **[verified]**, **[reported]** (stated by the owner or
@@ -77,6 +77,15 @@ visible in a past session, not reproducible here) or **[unverified]**.
   else it falls back to the vanilla `public/app.html`. `render.yaml` buildCommand is
   `npm install && npm run build`. **Not deployed yet** — a deploy also runs migrations
   8-13 on boot when `DATABASE_URL` is set. **[code committed: verified locally]**
+
+## 3b. Deploy readiness (8 Nov, merged)
+- PR #1 merged into `main` at `32d1af4` (19 commits, merge commit, no squash).
+- `src/db/index.js` now retries PostgreSQL bootstrap (`DB_BOOTSTRAP_ATTEMPTS`, default 3,
+  1s/2s/4s) before failing the boot; verified with an unreachable host (2 attempts, then throw).
+- `render.yaml` build installs Chromium for screenshots (non-fatal) and sets the retry count.
+- **Not deployed yet**: Neon still at `schema_migrations` 7 and the live `/app` still serves the
+  vanilla bundles. A Render deploy will run migrations 8-13 at boot and serve the React UI.
+- Still owner-only: trigger the Render deploy, set `SERPER_API_KEY`, verify the Resend domain.
 
 ## 4. Tests already run (7-8 Nov 2026)
 
