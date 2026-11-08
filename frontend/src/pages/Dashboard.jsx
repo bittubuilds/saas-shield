@@ -77,6 +77,7 @@ export default function Dashboard() {
     <>
       <section className="hero" id="features">
         <SilkBackground className="silk" />
+        <SilkBackground className="silk-ribbon" color="#ff3d9a" speed={0.75} interactive={false} />
         <BouncingHeadline parts={[{ text: 'Protect Your' }, { text: 'SaaS Business with Smart Intelligence', accent: true }]} />
         <ScrambledText className="lead" text="Detect copied content, analyze competitors and get detailed insights about your SaaS product." />
         <form className="search" onSubmit={onSubmit} noValidate>

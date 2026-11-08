@@ -252,3 +252,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .hold-btn .hold-fill { transition: none; }
   .hold-btn .hold-fill::before { animation: none; }
 }
+
+/* Pink ribbon: a second silk band that flows across the bottom of the hero, like
+   the reference. Sits above the purple silk and fades out at both edges. */
+.hero .silk-ribbon { position: absolute; z-index: -1; inset: auto -10% 0 -10%; width: auto; height: 62%; opacity: .75; mix-blend-mode: screen;
+  -webkit-mask-image: radial-gradient(120% 100% at 50% 100%, #000 30%, transparent 78%);
+  mask-image: radial-gradient(120% 100% at 50% 100%, #000 30%, transparent 78%); }
+@media (max-width: 640px) { .hero .silk-ribbon { height: 48%; opacity: .65; } }
