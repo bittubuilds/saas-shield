@@ -6,11 +6,18 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
+    "build": "npm --prefix frontend install --no-audit --no-fund && npm --prefix frontend run build",
     "dev": "node --watch src/server.js",
     "test": "node --test tests/*.test.js",
     "test:similarity": "node --test tests/similarity.test.js",
     "test:crawler": "node --test tests/crawler-security.test.js",
-    "test:app": "node --test tests/app.test.js"
+    "test:app": "node --test tests/app.test.js",
+    "db:backup": "node tools/db-backup.js",
+    "db:restore": "node tools/db-restore.js",
+    "db:verify": "node tools/db-verify.js",
+    "db:copy": "node tools/db-copy-sqlite-to-pg.js",
+    "test:screenshots": "node --test tests/screenshots.test.js",
+    "screenshots:install": "playwright install chromium"
   },
   "engines": {
     "node": ">=22.5.0"
@@ -19,5 +26,11 @@
     "express": "^4.21.0",
     "pg": "^8.23.1"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@neondatabase/serverless": "^1.0.2"
+  },
+  "optionalDependencies": {
+    "playwright": "^1.65.0"
+  }
 }

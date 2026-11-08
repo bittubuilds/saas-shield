@@ -1,8 +1,10 @@
 'use strict';
 const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const config = require('./config');
 const db = require('./db/index');
+const durability = require('./db/durability');
 const email = require('./email');
 const authRoutes = require('./routes/auth-routes');
 const { requireAuth } = require('./auth');
@@ -59,6 +61,13 @@ app.use((req, res, next) => {
 });
 
 // Health check for deployment platforms. No auth, no data, no secrets.
+// Probed at startup so an ephemeral deployment announces itself in the deploy log
+// instead of only after the first data loss.
+try { durability.announce(); } catch (e) {
+  console.error('[db] durability check failed:', e.message);
+  if (process.env.DB_REQUIRE_DURABLE === 'true') throw e;
+}
+
 app.get('/api/health', (req, res) => {
   let dbOk = true;
   try {
@@ -72,6 +81,7 @@ app.get('/api/health', (req, res) => {
     env: config.nodeEnv,
     email_configured: email.describeConfig().configured,
     google_oauth_configured: config.oauth.google.configured,
+    database: (() => { try { return durability.probe(); } catch (e) { return { error: e.message }; } })(),
     scheduler_enabled: config.scheduler.enabled,
     external_cron_configured: Boolean(config.scheduler.cronSecret)
   });
@@ -86,10 +96,12 @@ app.use('/api', websiteRoutes.router);
 app.use('/api', scanRoutes);
 app.use('/api', resultRoutes);
 app.use('/api', reportRoutes);
+app.use('/api', require('./routes/ai-routes'));
 app.use('/api', workspaceRoutes);
 app.use('/api', monitorRoutes);
 app.use('/api', alertRoutes);
 app.use('/api', discoverRoutes);
+app.use('/api', require('./routes/competitor-routes'));
 
 // API 404 + error handling
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));
@@ -118,10 +130,30 @@ app.use(express.static(publicDir, {
   }
 }));
 app.get('/', (req, res) => res.sendFile(path.join(publicDir, 'index.html')));
-app.get('/app', (req, res) => res.sendFile(path.join(publicDir, 'app.html')));
+// The React UI in frontend/ is served at /app once it has been built. Tests
+// keep the vanilla shell so their assertions stay about the shipped bundles.
+const reactDist = path.join(__dirname, '..', 'frontend', 'dist');
+const reactIndex = path.join(reactDist, 'index.html');
+const serveReactUi = config.nodeEnv !== 'test' && fs.existsSync(reactIndex);
+if (serveReactUi) {
+  app.use('/app', express.static(reactDist, {
+    index: false,
+    // Without this /app 301s to /app/, which breaks the exact route below.
+    redirect: false,
+    extensions: false,
+    maxAge: 0,
+    etag: true,
+    setHeaders: (res, filePath) => {
+      // Vite assets are content-hashed; index.html must never be cached.
+      if (/\/assets\//.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      else res.setHeader('Cache-Control', 'no-cache');
+    }
+  }));
+}
+app.get(['/app', '/app/'], (req, res) => res.sendFile(serveReactUi ? reactIndex : path.join(publicDir, 'app.html')));
 
-// Workspace-isolated deep links all render the SPA shell.
-app.get('/app/*', (req, res) => res.sendFile(path.join(publicDir, 'app.html')));
+// Workspace-isolated deep links all render the active SPA shell.
+app.get('/app/*', (req, res) => res.sendFile(serveReactUi ? reactIndex : path.join(publicDir, 'app.html')));
 
 const server = app.listen(config.port, config.host, () => {
   console.log(`SaaS Shield listening on http://localhost:${config.port} (env=${config.nodeEnv})`);

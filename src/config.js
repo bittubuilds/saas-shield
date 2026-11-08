@@ -84,6 +84,45 @@ const config = {
     respectRobots: bool(env.CRAWL_RESPECT_ROBOTS, true)
   },
 
+  // Phase 4 competitor intelligence collection. Bounded by design: a competitor
+  // costs at most maxPages fetches, and no single page type may take the whole
+  // budget. These are read at call time so tests and operators can tune them.
+  competitorIntel: {
+    maxPages: num(env.CINT_MAX_PAGES, 12),
+    maxPerType: num(env.CINT_MAX_PAGES_PER_TYPE, 3),
+    maxTextChars: num(env.CINT_MAX_TEXT_CHARS, 20000),
+    staleAfterMs: num(env.CINT_STALE_AFTER_MINUTES, 20) * 60 * 1000,
+    // A pricing page is required evidence for a price statement; without one the
+    // competitor's price stays unknown rather than being guessed from a homepage.
+    pageTypes: ['homepage', 'pricing', 'features', 'product', 'docs', 'about', 'blog']
+  },
+
+  // Phase 4 screenshot capture. Off by default: a headless browser is not present
+  // on every host (it is not on a Render free instance), and an optional visual
+  // feature must never be the reason text collection fails. Enable it where a
+  // Chromium build exists, e.g. SHOT_ENABLED=true on a local machine or a worker.
+  screenshots: {
+    enabled: bool(env.SHOT_ENABLED, false),
+    storageProvider: env.SHOT_STORAGE || 'local',
+    dir: env.SHOT_DIR || path.join(__dirname, '..', 'data', 'screenshots'),
+    // Bounded on purpose: a competitor costs at most maxPerCompetitor captures,
+    // never more than concurrency at once, each with its own hard timeout.
+    maxPerCompetitor: num(env.SHOT_MAX_PER_COMPETITOR, 4),
+    concurrency: num(env.SHOT_CONCURRENCY, 1),
+    timeoutMs: num(env.SHOT_TIMEOUT_MS, 15000),
+    navigationTimeoutMs: num(env.SHOT_NAV_TIMEOUT_MS, 12000),
+    maxBytes: num(env.SHOT_MAX_BYTES, 2 * 1024 * 1024),
+    viewport: {
+      width: num(env.SHOT_VIEWPORT_WIDTH, 1280),
+      height: num(env.SHOT_VIEWPORT_HEIGHT, 900)
+    },
+    fullPage: bool(env.SHOT_FULL_PAGE, false),
+    // A full-page capture of a long page is a memory risk; the clip is capped.
+    maxHeight: num(env.SHOT_MAX_HEIGHT, 2400),
+    pageTypes: ['homepage', 'pricing', 'product', 'features'],
+    browserArgs: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+  },
+
   ssrf: {
     // Only for local development and automated tests. Production must keep false.
     allowPrivateIps: bool(env.SHIELD_ALLOW_PRIVATE_IPS, false)
@@ -162,6 +201,15 @@ if (!config.monitor.frequencies.includes(config.monitor.defaultFrequencyHours)) 
 }
 
 require('./authmode').apply(config);
+
+// Durability policy. Nothing here changes where data lives by default; it only
+// decides whether the app shouts when that location cannot survive a deploy.
+config.durability = {
+  requireDurable: env.DB_REQUIRE_DURABLE === 'true',
+  persistentPath: env.DB_PERSISTENT_PATH || null,
+  backupDir: env.DB_BACKUP_DIR || null,
+  backupKeep: num(env.DB_BACKUP_KEEP, 7)
+};
 
 // A scan that has not finished within this window is treated as orphaned by a
 // crashed process and recovered. Cancellation and long crawls of big sites stay

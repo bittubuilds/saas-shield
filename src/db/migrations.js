@@ -493,5 +493,445 @@ module.exports = [
       CREATE INDEX idx_email_outbox_created ON email_outbox(created_at DESC);
       CREATE INDEX idx_email_outbox_msg ON email_outbox(provider_message_id);
     `
+  },
+  {
+    version: 8,
+    name: 'competitor-intelligence-foundation',
+    sql: `
+      -- Structured competitors. A row is only created when we actually saw the
+      -- site, so source_url and discovered_at are never guessed.
+      CREATE TABLE IF NOT EXISTS competitors (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        discovery_id TEXT,
+        website_id TEXT,
+        domain TEXT NOT NULL,
+        site_url TEXT NOT NULL,
+        name TEXT,
+        description TEXT,
+        category TEXT,
+        target_audience TEXT,
+        positioning TEXT,
+        relevance_score INTEGER,
+        relevance_breakdown TEXT,
+        status TEXT NOT NULL DEFAULT 'possible'
+                CHECK (status IN ('verified','possible','rejected','unverifiable')),
+        status_reason TEXT,
+        source_url TEXT,
+        discovery_source TEXT,
+        discovered_at TEXT NOT NULL,
+        created_by TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE (workspace_id, domain)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_competitors_ws ON competitors(workspace_id);
+      CREATE INDEX IF NOT EXISTS idx_competitors_status ON competitors(workspace_id, status);
+
+      -- One row per candidate per discovery run, kept even when the candidate is
+      -- rejected: knowing what was considered and why is part of the evidence.
+      CREATE TABLE IF NOT EXISTS competitor_discoveries (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        discovery_id TEXT,
+        competitor_id TEXT,
+        query TEXT,
+        result_url TEXT NOT NULL,
+        result_host TEXT NOT NULL,
+        search_rank INTEGER,
+        decision TEXT NOT NULL CHECK (decision IN ('verified','possible','rejected')),
+        score INTEGER,
+        score_breakdown TEXT,
+        reason TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_cdisc_ws ON competitor_discoveries(workspace_id);
+      CREATE INDEX IF NOT EXISTS idx_cdisc_competitor ON competitor_discoveries(competitor_id);
+
+      -- Pages we actually fetched for a competitor, with deterministic classification.
+      CREATE TABLE IF NOT EXISTS competitor_pages (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        competitor_id TEXT NOT NULL REFERENCES competitors(id) ON DELETE CASCADE,
+        url TEXT NOT NULL,
+        page_type TEXT NOT NULL DEFAULT 'other'
+                  CHECK (page_type IN ('homepage','product','features','pricing','docs','blog','about','other')),
+        classification_confidence REAL,
+        classification_reason TEXT,
+        http_status INTEGER,
+        content_hash TEXT,
+        fetch_status TEXT NOT NULL DEFAULT 'pending'
+                     CHECK (fetch_status IN ('pending','ok','failed','blocked','skipped')),
+        fetch_error TEXT,
+        fetched_at TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE (competitor_id, url)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_cpages_competitor ON competitor_pages(competitor_id);
+      CREATE INDEX IF NOT EXISTS idx_cpages_ws ON competitor_pages(workspace_id);
+
+      -- Every extracted fact keeps its source. No row without a source URL.
+      CREATE TABLE IF NOT EXISTS competitor_evidence (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        competitor_id TEXT NOT NULL REFERENCES competitors(id) ON DELETE CASCADE,
+        page_id TEXT,
+        source_url TEXT NOT NULL,
+        evidence_type TEXT NOT NULL,
+        field TEXT,
+        excerpt TEXT,
+        content_hash TEXT,
+        confidence REAL,
+        verification_status TEXT NOT NULL DEFAULT 'observed'
+                            CHECK (verification_status IN ('observed','inferred','unverified')),
+        collected_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_cev_competitor ON competitor_evidence(competitor_id);
+      CREATE INDEX IF NOT EXISTS idx_cev_ws ON competitor_evidence(workspace_id);
+    `
+  },
+  {
+    version: 9,
+    name: 'ai-intelligence-engine',
+    sql: `
+      CREATE TABLE IF NOT EXISTS ai_analyses (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        competitor_id TEXT NOT NULL,
+        scan_id TEXT,
+        stage TEXT NOT NULL,
+        status TEXT NOT NULL,
+        input_hash TEXT NOT NULL,
+        provider TEXT,
+        model TEXT,
+        analysis_version INTEGER NOT NULL,
+        prompt_version INTEGER NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        tokens_in INTEGER,
+        tokens_out INTEGER,
+        error TEXT,
+        started_at TEXT,
+        finished_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_analyses_unique
+        ON ai_analyses(competitor_id, stage, input_hash, analysis_version);
+      CREATE INDEX IF NOT EXISTS idx_ai_analyses_scan ON ai_analyses(scan_id, stage);
+      CREATE INDEX IF NOT EXISTS idx_ai_analyses_workspace ON ai_analyses(workspace_id, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS ai_findings (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        competitor_id TEXT,
+        scan_id TEXT,
+        analysis_id TEXT,
+        kind TEXT NOT NULL,
+        statement TEXT NOT NULL,
+        detail TEXT,
+        claim TEXT NOT NULL,
+        confidence REAL,
+        evidence_ids TEXT NOT NULL,
+        source_urls TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ai_findings_comp ON ai_findings(competitor_id, kind);
+      CREATE INDEX IF NOT EXISTS idx_ai_findings_scan ON ai_findings(scan_id, kind);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_findings_dedupe
+        ON ai_findings(analysis_id, kind, statement);
+
+      CREATE TABLE IF NOT EXISTS ai_usage (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        scan_id TEXT,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        requests INTEGER NOT NULL DEFAULT 0,
+        tokens_in INTEGER NOT NULL DEFAULT 0,
+        tokens_out INTEGER NOT NULL DEFAULT 0,
+        day TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ai_usage_scan ON ai_usage(scan_id);
+      CREATE INDEX IF NOT EXISTS idx_ai_usage_day ON ai_usage(day);
+
+      CREATE TABLE IF NOT EXISTS ai_reports (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        scan_id TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        provider TEXT,
+        model TEXT,
+        analysis_version INTEGER NOT NULL,
+        competitors TEXT NOT NULL,
+        evidence_snapshot TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_reports_version ON ai_reports(scan_id, version);
+      CREATE INDEX IF NOT EXISTS idx_ai_reports_workspace ON ai_reports(workspace_id, created_at DESC);
+    `
+  },
+  {
+    version: 10,
+    name: 'competitor-intelligence-collection',
+    sql: `
+      -- Phase 4: collected page content and structured intelligence.
+      -- Pages gain the fetch metadata needed to explain a partial crawl, plus the
+      -- text the extractors read (bounded, never the raw HTML).
+      ALTER TABLE competitor_pages ADD COLUMN relevance_score REAL;
+      ALTER TABLE competitor_pages ADD COLUMN discovery_source TEXT;
+      ALTER TABLE competitor_pages ADD COLUMN depth INTEGER;
+      ALTER TABLE competitor_pages ADD COLUMN final_url TEXT;
+      ALTER TABLE competitor_pages ADD COLUMN title TEXT;
+      ALTER TABLE competitor_pages ADD COLUMN text_content TEXT;
+      ALTER TABLE competitor_pages ADD COLUMN text_chars INTEGER;
+      ALTER TABLE competitor_pages ADD COLUMN fetched_bytes INTEGER;
+      ALTER TABLE competitor_pages ADD COLUMN duplicate_of TEXT;
+
+      -- One row per collection attempt. A run that died mid-flight is visible and
+      -- recoverable instead of leaving pages stuck in 'pending'.
+      CREATE TABLE IF NOT EXISTS competitor_crawls (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        competitor_id TEXT NOT NULL REFERENCES competitors(id) ON DELETE CASCADE,
+        scan_id TEXT,
+        status TEXT NOT NULL DEFAULT 'running'
+               CHECK (status IN ('running','completed','partial','failed')),
+        page_budget INTEGER,
+        pages_attempted INTEGER NOT NULL DEFAULT 0,
+        pages_ok INTEGER NOT NULL DEFAULT 0,
+        pages_failed INTEGER NOT NULL DEFAULT 0,
+        reason TEXT,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ccrawls_competitor ON competitor_crawls(competitor_id, started_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_ccrawls_ws ON competitor_crawls(workspace_id, status);
+
+      -- Extracted features. Append-only: a page that changes produces a new row,
+      -- so an old claim keeps the evidence it was extracted from.
+      CREATE TABLE IF NOT EXISTS competitor_features (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        competitor_id TEXT NOT NULL REFERENCES competitors(id) ON DELETE CASCADE,
+        page_id TEXT,
+        crawl_id TEXT,
+        source_url TEXT NOT NULL,
+        page_type TEXT NOT NULL,
+        identity_key TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        category TEXT,
+        claim_level TEXT NOT NULL
+                    CHECK (claim_level IN ('documented','marketing','inferred','unverified')),
+        confidence REAL,
+        verification_status TEXT NOT NULL DEFAULT 'observed'
+                            CHECK (verification_status IN ('observed','inferred','unverified')),
+        evidence_id TEXT,
+        evidence_excerpt TEXT,
+        content_hash TEXT,
+        observed_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_cfeat_competitor ON competitor_features(competitor_id, observed_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_cfeat_ws ON competitor_features(workspace_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_cfeat_dedupe
+        ON competitor_features(competitor_id, identity_key, content_hash);
+
+      -- Extracted plans. price_value is the number printed on the page; it is never
+      -- converted to another currency, and price_display keeps the original wording.
+      CREATE TABLE IF NOT EXISTS competitor_plans (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        competitor_id TEXT NOT NULL REFERENCES competitors(id) ON DELETE CASCADE,
+        page_id TEXT,
+        crawl_id TEXT,
+        source_url TEXT NOT NULL,
+        identity_key TEXT NOT NULL,
+        plan_name TEXT NOT NULL,
+        price_display TEXT,
+        price_value REAL,
+        currency TEXT,
+        currency_display TEXT,
+        billing_interval TEXT NOT NULL DEFAULT 'unknown'
+                CHECK (billing_interval IN ('month','year','week','day','one_time','custom','unknown')),
+        billing_note TEXT,
+        is_starting_price INTEGER NOT NULL DEFAULT 0,
+        price_stated INTEGER NOT NULL DEFAULT 0,
+        free_plan INTEGER,
+        trial_days INTEGER,
+        trial_display TEXT,
+        usage_based INTEGER,
+        enterprise_custom INTEGER,
+        limits TEXT,
+        plan_features TEXT,
+        original_text TEXT NOT NULL,
+        confidence REAL,
+        verification_status TEXT NOT NULL DEFAULT 'observed'
+                            CHECK (verification_status IN ('observed','inferred','unverified')),
+        evidence_id TEXT,
+        content_hash TEXT,
+        observed_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_cplan_competitor ON competitor_plans(competitor_id, observed_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_cplan_ws ON competitor_plans(workspace_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_cplan_dedupe
+        ON competitor_plans(competitor_id, identity_key, content_hash);
+
+      -- Current pricing answer per competitor. NULL means unknown: an absent price
+      -- is never turned into 0, and an absent free plan is never turned into 'paid'.
+      CREATE TABLE IF NOT EXISTS competitor_pricing (
+        competitor_id TEXT PRIMARY KEY REFERENCES competitors(id) ON DELETE CASCADE,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        crawl_id TEXT,
+        has_pricing_evidence INTEGER NOT NULL DEFAULT 0,
+        free_plan INTEGER,
+        free_trial INTEGER,
+        trial_days INTEGER,
+        trial_display TEXT,
+        starting_price_display TEXT,
+        starting_price_value REAL,
+        currency TEXT,
+        billing_interval TEXT,
+        usage_based INTEGER,
+        enterprise_custom INTEGER,
+        plans_count INTEGER NOT NULL DEFAULT 0,
+        source_url TEXT,
+        confidence REAL,
+        extracted_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_cpricing_ws ON competitor_pricing(workspace_id);
+    `
+  },
+  {
+    version: 11,
+    name: 'evidence-versioning-and-ai-evidence-snapshots',
+    sql: `
+      -- Evidence becomes a version chain per identity instead of an undifferentiated
+      -- append log. A row is never edited: a content change closes the previous
+      -- version (superseded_by) and a new row is inserted.
+      ALTER TABLE competitor_evidence ADD COLUMN identity_key TEXT;
+      ALTER TABLE competitor_evidence ADD COLUMN content_hash_norm TEXT;
+      ALTER TABLE competitor_evidence ADD COLUMN version INTEGER;
+      ALTER TABLE competitor_evidence ADD COLUMN observed_at TEXT;
+      ALTER TABLE competitor_evidence ADD COLUMN superseded_at TEXT;
+      ALTER TABLE competitor_evidence ADD COLUMN superseded_by TEXT;
+      ALTER TABLE competitor_evidence ADD COLUMN last_seen_at TEXT;
+      ALTER TABLE competitor_evidence ADD COLUMN observations INTEGER NOT NULL DEFAULT 1;
+
+      -- One row per distinct content per identity: recording the same observation
+      -- twice is a duplicate, not a second fact. Legacy rows (NULL identity) stay.
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_cev_content_unique
+        ON competitor_evidence(competitor_id, identity_key, content_hash_norm);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_cev_version_unique
+        ON competitor_evidence(competitor_id, identity_key, version);
+      CREATE INDEX IF NOT EXISTS idx_cev_current
+        ON competitor_evidence(workspace_id, competitor_id, superseded_at);
+      CREATE INDEX IF NOT EXISTS idx_cev_identity
+        ON competitor_evidence(competitor_id, identity_key, version DESC);
+
+      -- Exactly which evidence an AI analysis consumed, with the content hash it
+      -- consumed. This is how "changed since the last analysis" stays precise and
+      -- how a historical analysis can be re-read without guessing.
+      CREATE TABLE IF NOT EXISTS ai_analysis_evidence (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        analysis_id TEXT NOT NULL,
+        scan_id TEXT,
+        competitor_id TEXT NOT NULL,
+        evidence_kind TEXT NOT NULL
+                 CHECK (evidence_kind IN ('page','feature','plan','pricing','competitor_page')),
+        evidence_id TEXT NOT NULL,
+        source_url TEXT,
+        content_hash TEXT,
+        observed_at TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_aie_dedupe
+        ON ai_analysis_evidence(analysis_id, evidence_kind, evidence_id, content_hash);
+      CREATE INDEX IF NOT EXISTS idx_aie_competitor
+        ON ai_analysis_evidence(workspace_id, competitor_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_aie_analysis
+        ON ai_analysis_evidence(analysis_id);
+
+      -- Evidence versioning backfill: existing rows become the current version of
+      -- their identity, so no historical row is lost and no new one is invented.
+      UPDATE competitor_evidence SET observed_at = collected_at WHERE observed_at IS NULL;
+      UPDATE competitor_evidence SET last_seen_at = collected_at WHERE last_seen_at IS NULL;
+    `
+  },
+  {
+    version: 12,
+    name: 'competitor-screenshots',
+    sql: `
+      -- A screenshot row is metadata about a captured image, never the image itself
+      -- (bytes live in the configured storage provider). Status records what happened
+      -- so a failed capture is visible instead of looking like "no screenshot yet".
+      CREATE TABLE IF NOT EXISTS competitor_screenshots (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        competitor_id TEXT NOT NULL,
+        page_id TEXT,
+        url TEXT NOT NULL,
+        page_type TEXT NOT NULL,
+        status TEXT NOT NULL
+                 CHECK (status IN ('captured','duplicate','failed','skipped','unavailable')),
+        reason TEXT,
+        content_hash TEXT,
+        storage_provider TEXT,
+        storage_key TEXT,
+        storage_url TEXT,
+        bytes INTEGER,
+        width INTEGER,
+        height INTEGER,
+        duration_ms INTEGER,
+        captured_at TEXT,
+        duplicate_of TEXT,
+        capture_version INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      -- Deduplication: the same image for the same competitor is stored once. The
+      -- hash is the image bytes, so a re-render that differs by a pixel is a new row.
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_shot_hash_unique
+        ON competitor_screenshots(competitor_id, content_hash)
+        WHERE content_hash IS NOT NULL AND status = 'captured';
+      CREATE INDEX IF NOT EXISTS idx_shot_competitor
+        ON competitor_screenshots(workspace_id, competitor_id, page_type, captured_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_shot_workspace
+        ON competitor_screenshots(workspace_id, created_at DESC);
+    `
+  },
+  {
+    version: 13,
+    name: 'ai-report-incremental',
+    sql: `
+      -- Synthesis becomes incremental the same way per-stage analysis already is:
+      -- the input hash covers exactly the findings a report would be built from, so
+      -- unchanged findings resolve to the report that already exists instead of
+      -- spending another model call. Existing rows keep a NULL hash and are still
+      -- served; only new runs are deduplicated by it.
+      ALTER TABLE ai_reports ADD COLUMN input_hash TEXT;
+      ALTER TABLE ai_reports ADD COLUMN error TEXT;
+      ALTER TABLE ai_reports ADD COLUMN finished_at TEXT;
+
+      -- One in-flight synthesis per scan. The claim row is inserted before the
+      -- model is called, so a second worker cannot start the same job, and a crash
+      -- leaves a visible 'running' row that is reclaimed after the stale window.
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_reports_running
+        ON ai_reports(scan_id)
+        WHERE status = 'running';
+      CREATE INDEX IF NOT EXISTS idx_ai_reports_hash
+        ON ai_reports(scan_id, input_hash);
+    `
   }
 ];

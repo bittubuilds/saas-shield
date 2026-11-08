@@ -5,10 +5,14 @@ services:
     name: saas-shield
     runtime: node
     plan: free
-    buildCommand: npm install
+    buildCommand: npm install && npm run build && (npx playwright install chromium || echo 'playwright browsers unavailable - screenshots disabled')
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
+      # Neon/Render can refuse the first connection on a cold start; the app retries
+      # DB_BOOTSTRAP_ATTEMPTS times (default 3) before failing the boot.
+      - key: DB_BOOTSTRAP_ATTEMPTS
+        value: "3"
       - key: NODE_ENV
         value: production
       - key: COOKIE_SECURE

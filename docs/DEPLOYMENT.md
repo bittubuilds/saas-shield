@@ -235,3 +235,36 @@ execution behind a claimed-work table (`status='queued'` → `claimed_by`,
 `job_locks`-style lease, and keep the web process read-only for job execution.
 The `job_locks` table and the `scans.status` column already carry the states this
 needs; no Redis is required until polling itself becomes the bottleneck.
+
+---
+
+## Database durability (added Milestone 2)
+
+The free Render plan has no persistent disk, so `data/saas-shield.db` is destroyed on
+every deploy. `/api/health` now reports a `database` block; `database.durable: false`
+means the running instance cannot survive a redeploy.
+
+Durable production setup:
+
+1. Create a free PostgreSQL database (Neon or Supabase).
+2. Set `DATABASE_URL` in the service environment. Migrations apply automatically on boot.
+3. To keep existing SQLite data, run `npm run db:copy -- /path/to/saas-shield.db` once
+   against that database (idempotent, parent-first).
+4. Confirm `/api/health` shows `backend: postgres` and `durable: true`.
+5. Take a snapshot before any migration: `npm run db:backup`.
+
+Full detail: `docs/DATABASE_DURABILITY_REPORT.md`.
+
+## Neon (durable PostgreSQL) — verified setup
+
+The data plane (port 5432) is blocked in some sandboxes and CI runners, while Neon's
+HTTPS endpoint is not. `node tools/neon-migrate.js` applies the same migrations over
+HTTPS and records them in `schema_migrations`, so an environment that cannot open
+5432 can still prepare the database.
+
+Verified 7 Nov 2026 on project `sweet-shape-29779616` (org Bittu, aws-ap-southeast-1,
+branch `main`, database `neondb`): 7 migrations, 27 tables, PostgreSQL 18.6.
+
+Server runtime is unchanged: with `DATABASE_URL` set, `src/db/index.js` applies any
+pending migration on boot through the normal pg adapter. Set the variable on the host;
+never commit a connection string.

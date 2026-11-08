@@ -114,44 +114,8 @@ const NAV_GROUPS = [
   ['More', ['#/scans', '#/monitoring', '#/changes', '#/alerts']]
 ];
 
-function shell(content, activeRoute) {
-  const ws = me && me.workspaces ? me.workspaces.find((w) => w.id === wsId) : null;
-  const byHref = new Map(NAV.map(([href, label, icon]) => [href, { label, icon }]));
-  const isActive = (href) => location.hash.startsWith(href)
-    && !(href === '#/results' && location.hash.startsWith('#/results/'));
-  const links = NAV_GROUPS.map(([group, hrefs]) => {
-    const section = hrefs.map((href) => {
-      const item = byHref.get(href);
-      if (!item) return '';
-      return `<a class="navlink ${isActive(href) ? 'active' : ''}" href="${href}"${isActive(href) ? ' aria-current="page"' : ''}>${ICONS[item.icon]} ${item.label}</a>`;
-    }).join('');
-    return `${group ? `<div class="kicker" style="padding:14px 10px 6px;">${group}</div>` : '<div style="height:1px;background:var(--line);margin:10px 10px;"></div>'}${section}`;
-  }).join('');
-  const mobileLinks = [...NAV, ['#/settings', 'Settings', 'settings']].map(([href, label, icon]) =>
-    `<a class="navlink ${location.hash.startsWith(href) ? 'active' : ''}" href="${href}">${ICONS[icon]} ${label}</a>`).join('');
-  return `
-  <div class="shell">
-    <aside class="sidebar">
-      <a class="logo" href="#/dashboard">${LOGO_LOCKUP}</a>
-      <div class="ws-chip">${esc(ws ? ws.name : '')}</div>
-      ${links}
-      <div class="spacer"></div>
-      <div class="sidebar-foot">
-        <a class="navlink" href="#/settings">${ICONS.settings} Settings</a>
-        <div class="user-chip" title="${esc(me ? me.user.email : '')}">${esc(me ? me.user.email : '')}</div>
-        <a class="navlink" href="/">${ICONS.home} Back to site</a>
-        <button class="navlink" style="width:100%;border:none;background:none;text-align:left" id="signoutBtn">${ICONS.signout} Sign out</button>
-      </div>
-    </aside>
-    <main class="main" id="main">
-      ${me && me.user && me.user.email_verified === false ? `<div class="notice warn" style="margin-bottom:16px;">
-        <strong>Your email address is not confirmed.</strong> Confirm it to receive alerts and digests at ${esc(me.user.email)}.
-        <button class="btn ghost sm" id="resendVerifyBtn" type="button" style="margin-left:8px;">Resend email</button>
-      </div>` : ''}
-      ${content}
-    </main>
-    <nav class="mobile-nav">${mobileLinks}</nav>
-  </div>`;
+function shell(content) {
+  return shellV2(content);
 }
 
 // ---------------------------------------------------------------------------
@@ -1135,16 +1099,697 @@ async function loadMe() {
   }
 }
 
+/* ---------------------------------------------------------------------------
+   Interface v2
+
+   Three screens that do the work: start a scan from one URL, watch that scan
+   against what the server actually reports, then read the report. Every number
+   here is read from an existing endpoint. There is no sample data, no simulated
+   progress and no timer that moves a bar on its own.
+
+   Endpoints used (all pre-existing, workspace-scoped by requireWorkspace):
+     GET  /workspaces/:w/dashboard                  headline counts
+     GET  /workspaces/:w/scans                      history
+     POST /workspaces/:w/websites                   add site (auto_scan starts the scan)
+     GET  /workspaces/:w/websites/:id/initial-scan  live stage state for one scan
+     GET  /workspaces/:w/scans/:id                  scan row (status, error, counts)
+     GET  /workspaces/:w/results?scan_id=           findings for that scan
+     GET  /workspaces/:w/scans/:id/ai               whether an AI report exists
+     GET  /workspaces/:w/screenshots/capability     honest screenshot availability
+     GET  /workspaces/:w/reports/export.pdf         deterministic PDF
+     GET  /workspaces/:w/scans/:id/ai/report.pdf    AI PDF, when one exists
+   --------------------------------------------------------------------------- */
+
+const ICON_HELP = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.6 2.6 0 1 1 3.6 2.4c-.8.4-1.2 1-1.2 1.9"/><path d="M12 17.2h.01"/></svg>';
+const ICON_USER = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>';
+const ICON_MENU = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>';
+const ICON_CLOSE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+const ICON_SEARCH = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4.2-4.2"/></svg>';
+const ICON_LINK = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.1 0l1.4-1.4a5 5 0 0 0-7.1-7.1L10 5.9"/><path d="M14 11a5 5 0 0 0-7.1 0L5.5 12.4a5 5 0 0 0 7.1 7.1L14 18.1"/></svg>';
+
+const V2_MENU = [
+  ['#/dashboard', 'Dashboard', 'dash'],
+  ['#/results', 'Reports', 'results'],
+  ['#/scans', 'History', 'scans'],
+  ['#/settings', 'Settings', 'settings'],
+  ['#/help', 'Help &amp; Support', 'help'],
+  ['#/account', 'Account / Profile', 'user']
+];
+
+// Marketing links. Each one goes somewhere that exists: the features section of
+// this page, the documentation in the repository, and the project README. There
+// is no pricing page because the product has no pricing yet.
+const V2_TOPNAV = [
+  ['#/dashboard', 'Features', 'features'],
+  ['https://github.com/bittubuilds/saas-shield/tree/main/docs', 'Docs', ''],
+  ['https://github.com/bittubuilds/saas-shield#readme', 'About', '']
+];
+
+function v2Icon(name) {
+  if (name === 'help') return ICON_HELP;
+  if (name === 'user') return ICON_USER;
+  return ICONS[name] || '';
+}
+
+function siteFooter() {
+  return `<footer class="site-footer">
+    <div class="foot-left"><span class="foot-crown" aria-hidden="true">&#9670;</span> Bittu Builds &copy; 2026</div>
+    <div class="foot-right">Build. Grow. Dominate.</div>
+  </footer>`;
+}
+
+function menuPanel() {
+  const items = V2_MENU.map(([href, label, icon]) => {
+    const active = href === '#/dashboard'
+      ? (location.hash === '#/dashboard' || location.hash === '' || location.hash === '#/')
+      : location.hash.startsWith(href);
+    return `<a class="menu-link${active ? ' active' : ''}" href="${href}"${active ? ' aria-current="page"' : ''}>${v2Icon(icon)}<span>${label}</span></a>`;
+  }).join('');
+  return `<div class="menu-scrim" id="menuScrim" hidden></div>
+  <aside class="menu-panel" id="menuPanel" hidden aria-label="Main menu">
+    <div class="menu-head">
+      <span class="menu-title">Menu</span>
+      <button class="icon-btn" id="menuClose" type="button" aria-label="Close menu">${ICON_CLOSE}</button>
+    </div>
+    <div class="menu-ws">${esc((me && me.workspaces && me.workspaces.find((w) => w.id === wsId) || {}).name || '')}</div>
+    <nav class="menu-list">${items}</nav>
+    <div class="menu-foot">
+      <div class="menu-user" title="${esc(me && me.user ? me.user.email : '')}">${esc(me && me.user ? me.user.email : '')}</div>
+      <button class="menu-link danger" id="menuLogout" type="button">${ICONS.signout}<span>Logout</span></button>
+    </div>
+  </aside>`;
+}
+
+function shellV2(content) {
+  const nav = V2_TOPNAV.map(([href, label, scroll]) =>
+    `<a class="topnav-link" href="${href}"${scroll ? ` data-scroll="${scroll}"` : ' target="_blank" rel="noopener"'}>${label}</a>`).join('');
+  return `
+  <div class="app">
+    <header class="topbar">
+      <a class="brand" href="#/dashboard" aria-label="SaaS Shield dashboard">
+        <img src="/brand/logo-mark.png" alt="" width="26" height="29">
+        <span class="brand-name">SaaS Shield</span>
+      </a>
+      <nav class="topnav" aria-label="Sections">${nav}</nav>
+      <button class="menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="menuPanel" aria-label="Open menu">${ICON_MENU}</button>
+    </header>
+    ${menuPanel()}
+    <main class="app-main" id="main">
+      ${me && me.user && me.user.email_verified === false ? `<div class="notice warn" style="margin-bottom:18px;">
+        <strong>Your email address is not confirmed.</strong> Confirm it to receive alerts at ${esc(me.user.email)}.
+        <button class="btn ghost sm" id="resendVerifyBtn" type="button" style="margin-left:8px;">Resend email</button>
+      </div>` : ''}
+      ${content}
+    </main>
+    ${siteFooter()}
+  </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// URL entry
+// ---------------------------------------------------------------------------
+
+// Client-side check only. The server re-validates and refuses private, reserved
+// and credential-bearing hosts, so this never decides what is safe to crawl.
+function parseUserUrl(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return { ok: false, error: 'Enter the address of the website you want to check.' };
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `https://${value}`;
+  let u;
+  try { u = new URL(withScheme); } catch { return { ok: false, error: 'That is not a valid web address. Try example.com.' }; }
+  if (!['http:', 'https:'].includes(u.protocol)) return { ok: false, error: 'Only http and https addresses can be scanned.' };
+  if (u.username || u.password) return { ok: false, error: 'Remove the username and password from the address.' };
+  const host = u.hostname.toLowerCase();
+  if (!host || host === 'localhost' || !host.includes('.')) return { ok: false, error: 'Enter a full domain, for example example.com.' };
+  if (/^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|0\.0\.0\.0$)/.test(host) || host.endsWith('.local') || host.endsWith('.internal')) {
+    return { ok: false, error: 'That address is on a private network and cannot be scanned.' };
+  }
+  return { ok: true, url: u.toString() };
+}
+
+async function submitUrlForm(e) {
+  if (e) e.preventDefault();
+  const input = elid('urlInput');
+  const btn = elid('urlGo');
+  const errEl = elid('urlError');
+  if (!input || !btn) return;
+  if (errEl) errEl.textContent = '';
+  const parsed = parseUserUrl(input.value);
+  if (!parsed.ok) {
+    if (errEl) errEl.textContent = parsed.error;
+    input.focus();
+    return;
+  }
+  btn.disabled = true;
+  input.disabled = true;
+  btn.classList.add('busy');
+  try {
+    const out = await api(`/workspaces/${wsId}/websites`, {
+      method: 'POST',
+      body: { url: parsed.url, kind: 'original', auto_scan: true }
+    });
+    const site = out && out.website;
+    if (!site || !site.id) throw new Error('The website was added but no scan was started.');
+    try { sessionStorage.setItem('shield.scanUrl', parsed.url); } catch { /* private mode */ }
+    location.hash = '#/scan/' + encodeURIComponent(site.id);
+  } catch (e2) {
+    // A site already registered here is not a failure: go and show its scan.
+    if (e2.status === 409) {
+      let list = { websites: [] };
+      try { list = await api(`/workspaces/${wsId}/websites`); } catch { /* keep empty */ }
+      const host = new URL(parsed.url).hostname.replace(/^www\./, '');
+      const match = (list.websites || []).find((w) => String(w.domain || '').replace(/^www\./, '') === host);
+      if (match) {
+        try { sessionStorage.setItem('shield.scanUrl', parsed.url); } catch { /* private mode */ }
+        location.hash = '#/scan/' + encodeURIComponent(match.id);
+        return;
+      }
+    }
+    if (errEl) errEl.textContent = e2.message || 'That website could not be added.';
+    btn.disabled = false;
+    input.disabled = false;
+    btn.classList.remove('busy');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Screen 1: dashboard
+// ---------------------------------------------------------------------------
+
+const V2_FEATURES = [
+  ['bolt', 'Smart Scanning', 'Automatic scanning of the pages your site publishes, triggered from one URL.'],
+  ['chart', 'Competitor Insights', 'Pages are compared against other sites you register, with both sides quoted.'],
+  ['image', 'Screenshots', 'Captured as evidence metadata when the deployment has a browser available.'],
+  ['doc', 'Detailed Reports', 'Versioned PDF and JSON exports built from stored evidence, not from memory.']
+];
+
+function featureIcon(kind) {
+  const paths = {
+    bolt: '<path d="M13 2 4.5 13H11l-1 9 8.5-11H12l1-9z"/>',
+    chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+    image: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M21 16l-5-5-6 6"/>',
+    doc: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>'
+  };
+  return `<svg class="fx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[kind] || paths.bolt}</svg>`;
+}
+
+async function dashboardV2() {
+  let dash = null;
+  let scans = [];
+  try { dash = await api(`/workspaces/${wsId}/dashboard`); } catch { dash = null; }
+  try { const r = await api(`/workspaces/${wsId}/scans`); scans = (r.scans || []).slice(0, 4); } catch { scans = []; }
+
+  const kpis = dash ? `
+    <div class="kpis v2-kpis">
+      <div class="kpi"><div class="num">${esc(String(dash.monitored_websites || 0))}</div><div class="lbl">Websites monitored</div></div>
+      <div class="kpi"><div class="num">${esc(String(dash.scans_completed || 0))}</div><div class="lbl">Scans completed</div></div>
+      <div class="kpi${dash.findings_total > 0 ? ' accent' : ''}"><div class="num">${esc(String(dash.findings_total || 0))}</div><div class="lbl">Potential findings</div></div>
+      <div class="kpi${dash.scans_failed > 0 ? ' warn' : ''}"><div class="num">${esc(String(dash.scans_failed || 0))}</div><div class="lbl">Scan failures</div></div>
+    </div>` : '';
+
+  const recent = scans.length ? `
+    <section class="v2-section">
+      <h2 class="v2-h2">Recent activity</h2>
+      <div class="card v2-list">
+        ${scans.map((s) => `<a class="v2-row" href="#/report/${esc(s.original_website_id || '')}">
+          <span class="v2-row-main"><strong>${esc(s.original_url || '')}</strong>
+            <span class="small muted">vs ${esc(s.comparison_url || 'no comparison site')}</span></span>
+          <span class="badge ${esc(s.status)}">${esc(String(s.status || '').replace(/_/g, ' '))}</span>
+          <span class="small muted">${esc(fmtDate(s.created_at))}</span>
+        </a>`).join('')}
+      </div>
+    </section>` : '';
+
+  return `
+  <section class="hero">
+    <div class="hero-ribbons" data-ribbons data-ribbons-wires="56" data-ribbons-angle="34"
+         data-ribbons-twist="1.7" data-ribbons-glow="0.5" data-ribbons-intensity="0.95"
+         data-ribbons-speed="0.7" data-ribbons-spin="0.35" aria-hidden="true"></div>
+    <span class="pill-badge"><span class="pill-dot"></span> Competitor Intelligence Platform</span>
+    <h1 class="hero-title" data-shatter data-shatter-intro="assemble" data-shatter-shard-size="0.09"
+        data-shatter-irregularity="0.6" data-shatter-glint="0.8" data-shatter-crack="0.6">Protect Your SaaS Business with <span class="grad">Smart Intelligence</span></h1>
+    <p class="hero-sub">Detect copied content, analyse competitors and get detailed insights about your SaaS product.</p>
+    <form class="urlbar" id="urlForm" novalidate>
+      <span class="urlbar-icon">${ICON_LINK}</span>
+      <input id="urlInput" type="text" inputmode="url" autocomplete="url" spellcheck="false"
+             placeholder="Enter website URL..." aria-label="Website URL">
+      <button class="urlbar-go" id="urlGo" type="submit" aria-label="Start scan">${ICON_SEARCH}</button>
+    </form>
+    <p class="form-error" id="urlError" role="alert"></p>
+    <p class="hero-note">The scan starts as soon as the site is added. Nothing is sent to a third-party API.</p>
+  </section>
+
+  ${kpis}
+
+  <section class="v2-section" id="features">
+    <div class="v2-sec-head">
+      <h2 class="v2-h2"><span class="sec-bar"></span> Powerful Features</h2>
+      <a class="link-more" href="#/results">Explore all &rarr;</a>
+    </div>
+    <div class="feature-grid">
+      ${V2_FEATURES.map(([icon, title, text]) => `<div class="feature-card">
+        <span class="feature-icon">${featureIcon(icon)}</span>
+        <h3>${title}</h3>
+        <p>${text}</p>
+      </div>`).join('')}
+    </div>
+  </section>
+
+  ${recent}`;
+}
+
+// ---------------------------------------------------------------------------
+// Screen 2: scan progress
+// ---------------------------------------------------------------------------
+
+// Weighted only over the stages this deployment actually runs. Screenshots are
+// left out of the denominator when no browser is available, so the bar can reach
+// 100% without implying a screenshot that never happened.
+function scanStageModel(out, cap) {
+  const site = (out && out.website) || {};
+  const scan = (out && out.scan) || null;
+  // initial-scan reports the page count inside website; older callers sent it
+  // at the top level, so accept either.
+  const pages = Number((out && out.pages_discovered) || site.pages_discovered || 0);
+  const shotsAvailable = Boolean(cap && cap.enabled && cap.browser && cap.browser.available);
+  const scanDone = Boolean(scan && scan.status === 'completed');
+  const scanDead = Boolean(scan && (scan.status === 'failed' || scan.status === 'cancelled'));
+  const crawlDone = pages > 0 && site.crawl_status !== 'crawling';
+
+  const stages = [
+    { key: 'added', label: 'Website Added', weight: 25, state: 'done', detail: site.url || '' },
+    {
+      key: 'crawl', label: 'Crawling Pages', weight: 40,
+      state: crawlDone ? 'done' : (site.crawl_status === 'failed' ? 'failed' : 'active'),
+      detail: pages > 0 ? `${pages} page${pages === 1 ? '' : 's'} read` : (site.crawl_status === 'failed' ? (site.crawl_error || 'crawl failed') : 'reading pages')
+    },
+    {
+      key: 'shots', label: 'Capturing Screenshots', weight: 10,
+      state: shotsAvailable ? (scanDone ? 'done' : 'pending') : 'unavailable',
+      detail: shotsAvailable
+        ? (scanDone ? 'captured with the scan' : 'runs with the scan')
+        : 'no browser available in this deployment',
+      counted: shotsAvailable
+    },
+    {
+      key: 'report', label: 'Generating Report', weight: 25,
+      state: scanDone ? 'done' : (scanDead ? 'failed' : (scan ? 'active' : 'pending')),
+      detail: scan ? String(scan.status) : 'waiting for the crawl'
+    }
+  ];
+  const counted = stages.filter((s) => s.counted !== false);
+  const totalWeight = counted.reduce((n, s) => n + s.weight, 0);
+  const earned = counted.reduce((n, s) => n + (s.state === 'done' ? s.weight : 0), 0);
+  const pct = Math.round((earned / totalWeight) * 100);
+  return { stages, pct, scan, site, scanDone, scanDead, shotsAvailable };
+}
+
+function stageRow(stage) {
+  const label = { done: 'Done', active: 'In progress', pending: 'Waiting', failed: 'Failed', unavailable: 'Not available' }[stage.state] || stage.state;
+  return `<li class="stage ${esc(stage.state)}">
+    <span class="stage-mark" aria-hidden="true"></span>
+    <span class="stage-text"><strong>${esc(stage.label)}</strong><span class="small muted">${esc(stage.detail || '')}</span></span>
+    <span class="stage-state">${esc(label)}</span>
+  </li>`;
+}
+
+function scanBodyHtml(model, siteId) {
+  const { stages, pct, scan, site, scanDone, scanDead } = model;
+  const stopped = scanDead ? `<div class="notice warn" style="margin-top:18px;">
+      <strong>${scan.status === 'cancelled' ? 'This scan was cancelled.' : 'This scan did not finish.'}</strong>
+      ${scan.error ? `<div class="small" style="margin-top:6px;">${esc(scan.error)}</div>` : ''}
+      <div class="cta-row" style="margin-top:12px;">
+        <button class="btn" type="button" data-retry-scan="${esc(scan.id)}">Try again</button>
+        <a class="btn ghost" href="#/dashboard">Back to dashboard</a>
+      </div>
+    </div>` : '';
+
+  return `
+  <section class="scan-head">
+    <a class="back-link" href="#/dashboard">&larr; Dashboard</a>
+    <h1>Scanning ${esc(site.url || 'your website')}</h1>
+    <p class="muted">${scanDone ? 'The scan has finished.' : 'Reading pages and comparing content. This page updates as the server reports progress.'}</p>
+    <div class="scan-meter" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">
+      <div class="scan-meter-bar" style="width:${pct}%"></div>
+    </div>
+    <div class="scan-meter-meta"><span id="scanPct">${pct}%</span><span class="small muted">of the stages this deployment runs</span></div>
+  </section>
+  <div class="card v2-list">
+    <ul class="stages">${stages.map(stageRow).join('')}</ul>
+  </div>
+  ${stopped}
+  <div class="scan-actions" id="scanActions">
+    ${scanDone ? `<a class="btn" href="#/report/${esc(siteId)}">View report</a>` : ''}
+    <a class="btn ghost" href="#/scans">Scan history</a>
+  </div>`;
+}
+
+async function scanProgressView(siteId) {
+  let out = null;
+  try { out = await api(`/workspaces/${wsId}/websites/${encodeURIComponent(siteId)}/initial-scan`); } catch (e) {
+    return `<div class="card"><h3>Scan not found</h3><p class="muted">${esc(e.message)}</p><a class="btn" href="#/dashboard">Back to dashboard</a></div>`;
+  }
+  let cap = null;
+  try { cap = await api(`/workspaces/${wsId}/screenshots/capability`); } catch { cap = null; }
+  const model = scanStageModel(out, cap);
+  pollScanProgress(siteId);
+  return scanBodyHtml(model, siteId);
+}
+
+function pollScanProgress(siteId) {
+  clearTimeout(window.__scanPoll);
+  const tick = async () => {
+    let out = null;
+    try { out = await api(`/workspaces/${wsId}/websites/${encodeURIComponent(siteId)}/initial-scan`); } catch {
+      window.__scanPoll = setTimeout(tick, 4000);
+      return;
+    }
+    let cap = null;
+    try { cap = await api(`/workspaces/${wsId}/screenshots/capability`); } catch { cap = null; }
+    const model = scanStageModel(out, cap);
+
+    // Patch in place so the URL form and buttons are not destroyed mid-click.
+    const main = elid('main');
+    if (!main || !location.hash.startsWith('#/scan/')) return;
+    main.innerHTML = scanBodyHtml(model, siteId);
+    bindScanActions(siteId, model);
+
+    if (model.scanDone) {
+      toast('Scan complete. Opening the report.', 'success');
+      window.__scanPoll = setTimeout(() => { location.hash = '#/report/' + encodeURIComponent(siteId); }, 1200);
+      return;
+    }
+    if (model.scanDead) return;   // failed or cancelled: stop polling, show the reason
+    window.__scanPoll = setTimeout(tick, 2500);
+  };
+  window.__scanPoll = setTimeout(tick, 2500);
+}
+
+function bindScanActions(siteId, model) {
+  document.querySelectorAll('[data-retry-scan]').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try {
+      await api(`/workspaces/${wsId}/scans/${b.dataset.retryScan}/retry`, { method: 'POST' });
+      toast('Scan queued again.', 'success');
+      render();
+    } catch (err) {
+      b.disabled = false;
+      showError(err);
+    }
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Screen 3: report
+// ---------------------------------------------------------------------------
+
+async function reportView(siteId) {
+  let out = null;
+  try { out = await api(`/workspaces/${wsId}/websites/${encodeURIComponent(siteId)}/initial-scan`); } catch (e) {
+    return `<div class="card"><h3>Report not available</h3><p class="muted">${esc(e.message)}</p><a class="btn" href="#/dashboard">Back to dashboard</a></div>`;
+  }
+  const site = out.website || {};
+  const scan = out.scan || null;
+  const discovery = out.discovery || null;
+
+  if (!scan) {
+    return `
+    <section class="scan-head">
+      <a class="back-link" href="#/dashboard">&larr; Dashboard</a>
+      <h1>No report yet</h1>
+      <p class="muted">${esc(site.url || 'This website')} has no finished scan. ${discovery ? `A competitor search is ${esc(discovery.status)}.` : ''}</p>
+    </section>
+    <div class="scan-actions">
+      <a class="btn" href="#/scan/${esc(siteId)}">Open the scan</a>
+      <a class="btn ghost" href="#/dashboard">Back to dashboard</a>
+    </div>`;
+  }
+
+  const [resultsOut, aiOut, shotsOut, competitorsOut] = await Promise.all([
+    api(`/workspaces/${wsId}/results?scan_id=${encodeURIComponent(scan.id)}&limit=6`).catch(() => ({ results: [] })),
+    api(`/workspaces/${wsId}/scans/${encodeURIComponent(scan.id)}/ai`).catch(() => null),
+    api(`/workspaces/${wsId}/screenshots/capability`).catch(() => null),
+    api(`/workspaces/${wsId}/competitors`).catch(() => ({ competitors: [] }))
+  ]);
+  const results = (resultsOut && resultsOut.results) || [];
+  const competitors = (competitorsOut && competitorsOut.competitors) || [];
+  const shotsAvailable = Boolean(shotsOut && shotsOut.enabled && shotsOut.browser && shotsOut.browser.available);
+  // Discovery rows are not the same thing as a site this workspace registered, and
+  // the report should count what was actually compared.
+  const comparedCount = Number((out.comparison && out.comparison.competitors_in_workspace) || competitors.length);
+  const aiReport = aiOut && aiOut.report ? aiOut.report : null;
+  const aiConfigured = Boolean(aiOut && aiOut.ai_configured);
+
+  const completed = scan.status === 'completed';
+  const topResultId = results.length ? results[0].id : null;
+  const pdfHref = aiReport
+    ? `/api/workspaces/${esc(wsId)}/scans/${esc(scan.id)}/ai/report.pdf?version=${esc(String(aiReport.version))}`
+    : `/api/workspaces/${esc(wsId)}/reports/export.pdf${topResultId ? `?result_id=${encodeURIComponent(topResultId)}` : ''}`;
+
+  const metric = (value, label, note) => `<div class="metric">
+    <div class="metric-num">${esc(String(value))}</div>
+    <div class="metric-lbl">${esc(label)}</div>
+    ${note ? `<div class="metric-note">${esc(note)}</div>` : ''}
+  </div>`;
+
+  const findingsBlock = results.length ? `
+    <div class="card v2-list">
+      ${results.map((r) => `<a class="v2-row finding" href="#/results/${esc(r.id)}">
+        <span class="v2-row-main">
+          <strong>${esc(String(r.match_type || 'match').replace(/_/g, ' '))}</strong>
+          <span class="small muted">${esc(r.original_url || '')} &rarr; ${esc(r.comparison_url || '')}</span>
+        </span>
+        <span class="score-pill"><span class="dot"></span>${esc(fmtScore(r.jaccard_score))}</span>
+        <span class="badge ${esc(r.status || 'new')}">${esc(String(r.status || 'new').replace(/_/g, ' '))}</span>
+      </a>`).join('')}
+    </div>
+    <p class="hint">A similarity score measures text overlap. It is not a legal conclusion.</p>` : `
+    <div class="card v2-list"><div class="empty small muted" style="padding:18px;">
+      ${completed
+        ? 'This scan finished without any potential matches. That is a normal result for a site with no overlapping copy.'
+        : 'Findings appear here once the scan completes.'}
+    </div></div>`;
+
+  const aiBlock = aiReport ? `
+    <section class="v2-section">
+      <h2 class="v2-h2"><span class="sec-bar"></span> AI analysis</h2>
+      <div class="card v2-list" style="padding:18px;">
+        <p class="small">Version ${esc(String(aiReport.version))} generated ${esc(fmtDate(aiReport.created_at))}.
+        ${aiOut.model ? `Model: <span class="mono">${esc(aiOut.model)}</span>.` : ''}</p>
+        <div class="cta-row" style="margin-top:10px;">
+          <a class="btn secondary" href="/api/workspaces/${esc(wsId)}/scans/${esc(scan.id)}/ai/report.pdf?version=${esc(String(aiReport.version))}">Download AI report</a>
+        </div>
+      </div>
+    </section>` : `
+    <section class="v2-section">
+      <h2 class="v2-h2"><span class="sec-bar"></span> AI analysis</h2>
+      <div class="card v2-list" style="padding:18px;">
+        <p class="small muted">${aiConfigured
+          ? 'No AI analysis has been run for this scan. It is a separate step and it spends provider quota.'
+          : 'AI analysis is not configured on this server, so only the deterministic report is available.'}</p>
+        ${aiConfigured ? `<div class="cta-row" style="margin-top:10px;">
+          <button class="btn secondary" type="button" id="runAiBtn">Run AI analysis</button>
+          <span class="small muted" id="runAiNote"></span>
+        </div>` : ''}
+      </div>
+    </section>`;
+
+  return `
+  <section class="scan-head">
+    <a class="back-link" href="#/dashboard">&larr; Dashboard</a>
+    <div class="report-title-row">
+      <h1>${esc(site.url || 'Scan report')}</h1>
+      <span class="badge ${esc(scan.status)}">${esc(String(scan.status || '').replace(/_/g, ' '))}</span>
+    </div>
+    <p class="muted">Scanned ${esc(fmtDate(scan.created_at))}${scan.finished_at ? ` &middot; finished ${esc(fmtDate(scan.finished_at))}` : ''}</p>
+  </section>
+
+  <div class="metric-grid">
+    ${metric(comparedCount, 'Competitors compared', comparedCount ? '' : 'No comparison site registered')}
+    ${metric(out.findings_total || 0, 'Potential findings', '')}
+    ${metric(scan.pages_compared == null ? 'n/a' : scan.pages_compared, 'Pages compared', '')}
+    ${metric(shotsAvailable ? 'Available' : 'Unavailable', 'Screenshots', shotsAvailable ? 'captured with collection' : 'no browser in this deployment')}
+  </div>
+
+  <section class="v2-section">
+    <h2 class="v2-h2"><span class="sec-bar"></span> Key findings</h2>
+    ${findingsBlock}
+  </section>
+
+  <div class="scan-actions">
+    <a class="btn" href="${pdfHref}">Download Report</a>
+    ${topResultId ? `<a class="btn secondary" href="#/results/${esc(topResultId)}">View Details</a>` : `<a class="btn secondary" href="#/results?scan_id=${esc(scan.id)}">View Details</a>`}
+    <a class="btn ghost" href="#/scan/${esc(siteId)}">Reopen scan</a>
+  </div>
+
+  ${aiBlock}`;
+}
+
+async function runAiAnalysis(scanId, btn) {
+  const note = elid('runAiNote');
+  btn.disabled = true;
+  if (note) note.textContent = 'Running. This can take a minute.';
+  try {
+    await api(`/workspaces/${wsId}/scans/${encodeURIComponent(scanId)}/ai`, { method: 'POST' });
+    toast('AI analysis finished.', 'success');
+    render();
+  } catch (e) {
+    btn.disabled = false;
+    if (note) note.textContent = e.message || 'AI analysis failed.';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Help and account
+// ---------------------------------------------------------------------------
+
+function helpView() {
+  return `
+  <section class="scan-head">
+    <h1>Help &amp; Support</h1>
+    <p class="muted">How the product works, what it cannot do, and where the technical documentation lives.</p>
+  </section>
+  <div class="card v2-list" style="padding:20px;">
+    <h3>What a scan does</h3>
+    <ol class="steps">
+      <li><strong>Add a website.</strong> It is registered to your workspace and the scan starts immediately.</li>
+      <li><strong>Pages are read.</strong> Only publicly reachable HTML is fetched. JavaScript-rendered sites can come back empty.</li>
+      <li><strong>Content is compared.</strong> Overlapping text is scored and shown with both sides quoted.</li>
+      <li><strong>You review it.</strong> Every finding can be confirmed or dismissed. Nothing is decided for you.</li>
+    </ol>
+    <h3 style="margin-top:18px;">Known limits</h3>
+    <ul class="steps">
+      <li>A similarity score is not proof of copying or infringement.</li>
+      <li>Only sites you register are compared. The wider internet is not monitored.</li>
+      <li>AI analysis runs only when you start it, and needs a provider key on the server.</li>
+      <li>Screenshots need a browser in the deployment. When there is none, the report says so.</li>
+    </ul>
+    <h3 style="margin-top:18px;">Documentation</h3>
+    <div class="cta-row">
+      <a class="btn secondary" href="https://github.com/bittubuilds/saas-shield#readme" target="_blank" rel="noopener">README</a>
+      <a class="btn ghost" href="https://github.com/bittubuilds/saas-shield/tree/main/docs" target="_blank" rel="noopener">docs/ folder</a>
+    </div>
+  </div>`;
+}
+
+async function accountView() {
+  const user = (me && me.user) || {};
+  let members = [];
+  try { const r = await api(`/workspaces/${wsId}/members`); members = r.members || []; } catch { members = []; }
+  const ws = (me.workspaces || []).find((w) => w.id === wsId) || {};
+  return `
+  <section class="scan-head">
+    <h1>Account</h1>
+    <p class="muted">Your identity and who can see this workspace.</p>
+  </section>
+  <div class="card v2-list" style="padding:20px;">
+    <div class="defgrid">
+      <div><div class="small muted">Email</div><div class="mono">${esc(user.email || '')}</div></div>
+      <div><div class="small muted">Email confirmed</div><div>${user.email_verified === false ? 'No' : 'Yes'}</div></div>
+      <div><div class="small muted">Workspace</div><div>${esc(ws.name || '')}</div></div>
+      <div><div class="small muted">Your role</div><div>${esc(user.role || 'owner')}</div></div>
+    </div>
+    <h3 style="margin-top:20px;">Members</h3>
+    ${members.length ? `<div class="table-scroll"><table><thead><tr><th>Email</th><th>Role</th></tr></thead><tbody>
+      ${members.map((m) => `<tr><td class="mono">${esc(m.email || '')}</td><td>${esc(m.role || '')}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="small muted">Member list is not available for this workspace.</p>'}
+    <div class="cta-row" style="margin-top:18px;">
+      <button class="btn secondary" type="button" id="accountSignout">Logout</button>
+      <a class="btn ghost" href="#/settings">Workspace settings</a>
+    </div>
+  </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// binding for the v2 shell and screens
+// ---------------------------------------------------------------------------
+
+function bindShellV2() {
+  const btn = elid('menuBtn');
+  const panel = elid('menuPanel');
+  const scrim = elid('menuScrim');
+  const closeBtn = elid('menuClose');
+  if (!btn || !panel) return;
+
+  const setOpen = (open) => {
+    panel.hidden = !open;
+    if (scrim) scrim.hidden = !open;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.innerHTML = open ? ICON_CLOSE : ICON_MENU;
+    document.body.classList.toggle('menu-open', open);
+  };
+  btn.addEventListener('click', () => setOpen(panel.hidden));
+  if (closeBtn) closeBtn.addEventListener('click', () => setOpen(false));
+  if (scrim) scrim.addEventListener('click', () => setOpen(false));
+  if (!window.__v2EscBound) {
+    window.__v2EscBound = true;
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      const p2 = elid('menuPanel');
+      if (p2 && !p2.hidden) { p2.hidden = true; const sc = elid('menuScrim'); if (sc) sc.hidden = true; const b2 = elid('menuBtn'); if (b2) { b2.setAttribute('aria-expanded', 'false'); b2.innerHTML = ICON_MENU; } document.body.classList.remove('menu-open'); }
+    });
+  }
+  panel.querySelectorAll('a.menu-link').forEach((a) => a.addEventListener('click', () => setOpen(false)));
+
+  const logout = async () => {
+    try { await api('/auth/signout', { method: 'POST' }); } catch { /* already out */ }
+    me = null; wsId = null;
+    toast('Signed out.');
+    location.hash = '#/';
+    render();
+  };
+  const menuLogout = elid('menuLogout');
+  if (menuLogout) menuLogout.addEventListener('click', logout);
+  const acctLogout = elid('accountSignout');
+  if (acctLogout) acctLogout.addEventListener('click', logout);
+
+  document.querySelectorAll('[data-scroll]').forEach((a) => a.addEventListener('click', (e) => {
+    const target = elid(a.dataset.scroll);
+    if (target) { e.preventDefault(); target.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  }));
+}
+
+function bindPageV2(hash) {
+  bindShellV2();
+  // Decorative background layers mount after the markup is in the DOM.
+  if (window.InterferenceRibbons) window.InterferenceRibbons.autoMount();
+  if (window.ShatterType) window.ShatterType.autoMount();
+  const form = elid('urlForm');
+  if (form) form.addEventListener('submit', submitUrlForm);
+  const input = elid('urlInput');
+  if (input) {
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitUrlForm(e); } });
+    if (location.hash.startsWith('#/dashboard')) input.focus({ preventScroll: true });
+  }
+  if (hash.startsWith('#/scan/')) {
+    const siteId = decodeURIComponent(hash.slice('#/scan/'.length).split('?')[0]);
+    bindScanActions(siteId, null);
+  }
+  const runAi = elid('runAiBtn');
+  if (runAi && hash.startsWith('#/report/')) {
+    const siteId = decodeURIComponent(hash.slice('#/report/'.length).split('?')[0]);
+    runAi.addEventListener('click', async () => {
+      try {
+        const out = await api(`/workspaces/${wsId}/websites/${encodeURIComponent(siteId)}/initial-scan`);
+        if (out && out.scan && out.scan.id) runAiAnalysis(out.scan.id, runAi);
+      } catch (e) { showError(e); }
+    });
+  }
+}
+
 async function render() {
   const hash = location.hash || '#/';
   const authed = me || (await loadMe());
   if (!authed) {
     await loadAuthCfg();   // the sign-in screen states whether verification is on
-    root.innerHTML = authView(hash.startsWith('#/signup') ? 'signup' : 'signin');
+    root.innerHTML = authView(hash.startsWith('#/signup') ? 'signup' : 'signin') + siteFooter();
     elid('authForm').addEventListener('submit', (e) => handleAuthForm(e, hash.startsWith('#/signup') ? 'signup' : 'signin'));
     return;
   }
 
+  // A canvas left running behind a detached DOM keeps a frame loop alive.
+  if (window.InterferenceRibbons) window.InterferenceRibbons.unmountAll();
+  if (window.ShatterType) window.ShatterType.unmountAll();
   let content = loading();
   root.innerHTML = shell(content, hash);
   bindShell();
@@ -1155,7 +1800,15 @@ async function render() {
       root.innerHTML = verifyFailedView(reason);
       return;
     }
-    if (hash.startsWith('#/changes/')) {
+    if (hash.startsWith('#/scan/')) {
+      content = await scanProgressView(decodeURIComponent(hash.slice('#/scan/'.length).split('?')[0]));
+    } else if (hash.startsWith('#/report/')) {
+      content = await reportView(decodeURIComponent(hash.slice('#/report/'.length).split('?')[0]));
+    } else if (hash.startsWith('#/help')) {
+      content = helpView();
+    } else if (hash.startsWith('#/account')) {
+      content = await accountView();
+    } else if (hash.startsWith('#/changes/')) {
       content = await changeDetailView(decodeURIComponent(hash.slice('#/changes/'.length).split('?')[0]));
     } else if (hash.startsWith('#/changes')) {
       content = await changesView();
@@ -1174,7 +1827,7 @@ async function render() {
     } else if (hash.startsWith('#/settings')) {
       content = await settingsView();
     } else {
-      content = await dashboardView();
+      content = await dashboardV2();
     }
   } catch (err) {
     if (err.status === 401) { me = null; wsId = null; render(); return; }
@@ -1182,6 +1835,7 @@ async function render() {
   }
   elid('main').innerHTML = content;
   bindPage(hash);
+  bindPageV2(hash);
 }
 
 async function handleDiscoverForm(e) {

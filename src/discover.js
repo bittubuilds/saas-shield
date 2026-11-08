@@ -156,6 +156,10 @@ async function runDiscovery(discoveryId, opts = {}) {
       throw new Error('The original site has no distinctive text sentences long enough to search for.');
     }
     const foundUrls = [];
+    // Search position is evidence: it is what tells a later scorer whether the
+    // candidate actually ranked for the original site's own wording. It has to be
+    // carried from the search response into the competitor, not dropped here.
+    const rankOf = new Map();
     const queriesUsed = [];
     for (const s of sentences) {
       if (foundUrls.length >= MAX_SITES * 3) break;
@@ -169,7 +173,10 @@ async function runDiscovery(discoveryId, opts = {}) {
         continue;
       }
       queriesUsed.push(q);
-      foundUrls.push(...urls);
+      urls.forEach((u, i) => {
+        foundUrls.push(u);
+        if (!rankOf.has(u)) rankOf.set(u, i);
+      });
     }
     if (queriesUsed.length === 0) {
       throw new SearchUnavailableError('Search was unavailable for every query. Try again shortly.');
@@ -198,7 +205,8 @@ async function runDiscovery(discoveryId, opts = {}) {
       }
       // Skip if a scan for this pair is already active (same rule as manual scans).
       const active = scanner.pairHasActiveScan(d.workspace_id, original.id, siteId);
-      if (active) { registered.push({ url: u, scan_id: active, already: true }); continue; }
+      const rank = rankOf.has(u) ? rankOf.get(u) : null;
+      if (active) { registered.push({ url: u, site_id: siteId, scan_id: active, already: true, rank }); continue; }
       const scanId = newId('scn');
       const params = { recrawl: true, maxPages: 10, maxDepth: 1, discovered: true };
       db.prepare(`INSERT INTO scans (id, workspace_id, original_website_id, comparison_website_id, status, params, created_by, created_at)
@@ -206,7 +214,31 @@ async function runDiscovery(discoveryId, opts = {}) {
         .run(scanId, d.workspace_id, original.id, siteId, JSON.stringify(params), d.created_by || null, utcNow());
       scanner.enqueueScan(scanId);
       createdScans++;
-      registered.push({ url: u, scan_id: scanId, already: false });
+      registered.push({ url: u, site_id: siteId, scan_id: scanId, already: false, rank });
+    }
+
+    // 3b. Structured competitor intelligence. Best-effort by design: a candidate
+    // we cannot evaluate must never fail the discovery run that already found it.
+    try {
+      const { evaluateCandidate, profileFromPages } = require('./competitor/pipeline');
+      const originalProfile = profileFromPages(pages);
+      for (const reg of registered) {
+        try {
+          await evaluateCandidate({
+            workspaceId: d.workspace_id,
+            discoveryId: d.id,
+            websiteId: reg.site_id || null,
+            url: reg.url,
+            searchRank: Number.isInteger(reg.rank) ? reg.rank : null,
+            original: originalProfile,
+            createdBy: d.created_by || null
+          });
+        } catch (e) {
+          console.error('[discover] competitor evaluation failed:', e.message);
+        }
+      }
+    } catch (e) {
+      console.error('[discover] competitor layer unavailable:', e.message);
     }
 
     db.prepare(`UPDATE discoveries SET status='completed', provider=?, queries=?, found_hosts=?, created_scan_count=?, finished_at=?, updated_at=? WHERE id=?`)
