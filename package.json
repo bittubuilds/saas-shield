@@ -6,7 +6,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "build": "npm --prefix frontend install --no-audit --no-fund && npm --prefix frontend run build",
+    "build": "npm --prefix frontend install --include=dev --no-audit --no-fund && npm --prefix frontend run build",
     "dev": "node --watch src/server.js",
     "test": "node --test tests/*.test.js",
     "test:similarity": "node --test tests/similarity.test.js",

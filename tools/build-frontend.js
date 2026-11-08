@@ -20,7 +20,7 @@ if (!fs.existsSync(path.join(dir, 'package.json'))) { console.log('[frontend] no
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 try {
   const hasLock = fs.existsSync(path.join(dir, 'package-lock.json'));
-  execFileSync(npm, hasLock ? ['ci', '--no-audit', '--no-fund'] : ['install', '--no-audit', '--no-fund'], { cwd: dir, stdio: 'inherit' });
+  execFileSync(npm, hasLock ? ['ci', '--include=dev', '--no-audit', '--no-fund'] : ['install', '--include=dev', '--no-audit', '--no-fund'], { cwd: dir, stdio: 'inherit' });
   execFileSync(npm, ['run', 'build'], { cwd: dir, stdio: 'inherit' });
   const out = path.join(dir, 'dist', 'index.html');
   console.log(fs.existsSync(out) ? '[frontend] build ok' : '[frontend] build produced no dist/index.html');
