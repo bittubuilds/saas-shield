@@ -97,6 +97,9 @@ export async function addWebsite(url, { kind = 'original', autoScan = true } = {
   return { website: body.website, initialScan: body.initial_scan || null };
 }
 
+export const deleteAccount = (confirm) =>
+  request('/auth/account', { method: 'DELETE', body: { confirm } });
+
 export const removeWebsite = (id) => request(ws(`/websites/${enc(id)}`), { method: 'DELETE' });
 
 export const updateWebsite = async (id, patch) =>
@@ -236,3 +239,12 @@ export const STAGES = [
   { key: 'comparing', label: 'Comparing Content', description: 'Looking for overlapping passages on other sites.' },
   { key: 'done', label: 'Findings Ready', description: 'The comparison finished.' },
 ];
+
+
+// Emails are shown masked in the UI and in logs.
+export function maskEmail(value) {
+  const s = String(value || '');
+  const at = s.indexOf('@');
+  if (at < 1) return s ? '***' : '';
+  return s.slice(0, 1) + '***' + s.slice(at);
+}

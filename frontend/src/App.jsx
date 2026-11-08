@@ -7,6 +7,8 @@ import Scanning from './pages/Scanning.jsx';
 import Report from './pages/Report.jsx';
 import History from './pages/History.jsx';
 import Competitors from './pages/Competitors.jsx';
+import Privacy from './pages/Privacy.jsx';
+import Settings from './pages/Settings.jsx';
 import Login from './pages/Login.jsx';
 import { loadSession, primaryWorkspace, setWorkspaceId, signOut } from './services/api.js';
 
@@ -70,6 +72,8 @@ export default function App() {
         <Route path="/report/:scanId" element={<Report />} />
         <Route path="/history" element={<History />} />
         <Route path="/competitors" element={<Competitors />} />
+        <Route path="/privacy" element={<Privacy />} />
+        <Route path="/settings" element={<Settings session={session} onSignOut={handleSignOut} />} />
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

@@ -18,6 +18,7 @@ const MENU = [
   { label: 'Reports', icon: 'reports', to: '/history' },
   { label: 'Competitors', icon: 'chart', to: '/competitors' },
   { label: 'History', icon: 'history', to: '/history' },
+  { label: 'Settings', icon: 'settings', to: '/settings' },
 ];
 
 export default function Layout({ session, workspace, onSignOut }) {
@@ -61,6 +62,10 @@ export default function Layout({ session, workspace, onSignOut }) {
         </div>
       </header>
       <main className="main"><Outlet /></main>
+      <footer className="footer">
+        <span>© {new Date().getFullYear()} SaaS Shield</span>
+        <nav aria-label="Legal"><Link to="/privacy">Privacy Policy</Link></nav>
+      </footer>
     </div>
   );
 }

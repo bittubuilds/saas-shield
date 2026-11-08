@@ -43,6 +43,22 @@ export default function Dashboard() {
   }, []);
   useEffect(loadSites, [loadSites]);
 
+  async function onRemove(site) {
+    const label = site.url || site.domain;
+    const ok = window.confirm(`Remove ${label} from your dashboard?\n\nIt stops being scanned, but its scans, findings and reports are kept.`);
+    if (!ok) return;
+    setRemoving(site.id);
+    setSitesError('');
+    try {
+      await removeWebsite(site.id);
+      setSites(await listWebsites());
+    } catch (e) {
+      setSitesError(e.message || 'Could not remove this site.');
+    } finally {
+      setRemoving('');
+    }
+  }
+
   async function onSubmit(e) {
     e.preventDefault();
     const url = normalizeUrl(value);

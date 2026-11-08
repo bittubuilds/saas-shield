@@ -385,6 +385,52 @@ function meHandler(req, res) {
 }
 router.get('/me', requireAuth, meHandler);
 
+
+// ---------------------------------------------------------------------------
+// Delete account
+//
+// Deletes the person, their memberships, sessions and any workspace they are the
+// only member of (which cascades that workspace's sites, scans and findings).
+// Retention exception: the security audit log is kept so abuse and billing
+// disputes remain answerable, but the link to the person is severed (user_id
+// nulled) instead of deleting the trail.
+// ---------------------------------------------------------------------------
+router.delete('/account', requireAuth, express.json({ limit: '4kb' }), (req, res) => {
+  const confirm = String((req.body && req.body.confirm) || '').trim().toUpperCase();
+  if (confirm !== 'DELETE') {
+    return res.status(400).json({ error: 'Type DELETE to confirm deleting your account.' });
+  }
+  const userId = req.user && req.user.id;
+  if (!userId) return res.status(401).json({ error: 'Not signed in.' });
+
+  const memberships = db.prepare('SELECT workspace_id FROM memberships WHERE user_id=?').all(userId);
+  const removedWorkspaces = [];
+  try {
+    db.exec('BEGIN');
+    for (const m of memberships) {
+      const others = db.prepare('SELECT COUNT(*) AS c FROM memberships WHERE workspace_id=? AND user_id<>?')
+        .get(m.workspace_id, userId).c;
+      if (Number(others) === 0) {
+        db.prepare('DELETE FROM workspaces WHERE id=?').run(m.workspace_id);
+        removedWorkspaces.push(m.workspace_id);
+      }
+    }
+    // Retention exception: keep the audit trail, drop the identity link.
+    db.prepare('UPDATE audit_events SET user_id=NULL WHERE user_id=?').run(userId);
+    db.prepare('DELETE FROM memberships WHERE user_id=?').run(userId);
+    db.prepare('DELETE FROM users WHERE id=?').run(userId);
+    db.exec('COMMIT');
+  } catch (e) {
+    try { db.exec('ROLLBACK'); } catch { /* ignore */ }
+    console.error('[account] delete failed:', e.message);
+    return res.status(500).json({ error: 'Could not delete the account. Nothing was removed.' });
+  }
+
+  try { logAuthEvent(req, 'account.deleted', { workspaces_removed: removedWorkspaces.length }); } catch { /* best effort */ }
+  clearSessionCookie(res);
+  res.json({ ok: true, deleted: { workspaces: removedWorkspaces.length, audit_retained: true } });
+});
+
 // ---------------------------------------------------------------------------
 // Google sign-in
 // ---------------------------------------------------------------------------
