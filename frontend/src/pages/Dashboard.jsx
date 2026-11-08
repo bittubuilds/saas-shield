@@ -6,6 +6,7 @@ import GlassIcon from '../components/GlassIcon.jsx';
 import ScrambledText from '../components/ScrambledText.jsx';
 import SilkBackground from '../components/SilkBackground.jsx';
 import BrandShatter from '../components/BrandShatter.jsx';
+import HoldButton from '../components/HoldButton.jsx';
 import { Empty, Loading } from '../components/Status.jsx';
 import { addWebsite, listWebsites, removeWebsite } from '../services/api.js';
 
@@ -46,8 +47,6 @@ export default function Dashboard() {
 
   async function onRemove(site) {
     const label = site.url || site.domain;
-    const ok = window.confirm(`Remove ${label} from your dashboard?\n\nIt stops being scanned, but its scans, findings and reports are kept.`);
-    if (!ok) return;
     setRemoving(site.id);
     setSitesError('');
     try {
@@ -108,15 +107,14 @@ export default function Dashboard() {
                     <h3>{s.url || s.domain}</h3>
                     <span>{s.kind === 'original' ? 'Your site' : 'Comparison'} · {s.status}</span>
                   </Link>
-                  <button
-                    type="button"
+                  <HoldButton
                     className="remove-btn"
-                    onClick={() => onRemove(s)}
-                    disabled={removing === s.id}
-                    aria-label={`Remove ${s.url || s.domain}`}
+                    onConfirm={() => onRemove(s)}
+                    busy={removing === s.id}
+                    ariaLabel={`Hold to remove ${s.url || s.domain}`}
                   >
-                    {removing === s.id ? 'Removing…' : 'Remove'}
-                  </button>
+                    {removing === s.id ? 'Removing…' : 'Hold to remove'}
+                  </HoldButton>
                 </li>
               ))}
             </ul>

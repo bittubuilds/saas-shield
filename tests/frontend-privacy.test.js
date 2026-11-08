@@ -32,7 +32,8 @@ test('the policy covers the required sections and claims nothing it cannot suppo
 test('account settings expose deletion behind a typed confirmation', () => {
   const page = read('frontend/src/pages/Settings.jsx');
   assert.match(page, /deleteAccount\('DELETE'\)/, 'calls the API with the confirmation word');
-  assert.match(page, /window\.confirm/, 'asks before deleting');
+  assert.match(page, /HoldButton/, 'the delete action is a hold-to-confirm button');
+  assert.match(page, /DELETE/, 'still requires the typed word');
   assert.match(page, /role="status"/, 'reports success');
   assert.match(page, /role="alert"/, 'reports failure');
 });
@@ -50,4 +51,14 @@ test('the brand wordmark keeps a static fallback and honours reduced motion', ()
   assert.match(cmp, /brand-word-static/, 'renders readable static text as a fallback');
   assert.match(cmp, /cancelAnimationFrame/, 'cleans up the animation loop');
   assert.match(cmp, /removeEventListener\('resize'/, 'cleans up the resize listener');
+});
+
+test('hold-to-confirm gates both destructive actions and cleans up its loop', () => {
+  const hold = read('frontend/src/components/HoldButton.jsx');
+  assert.match(hold, /cancelAnimationFrame/, 'cancels the animation frame on release and unmount');
+  assert.match(hold, /onPointerLeave/, 'releasing off the button aborts the hold');
+  assert.match(hold, /e\.key === ' '/, 'keyboard hold is supported');
+  const dash = read('frontend/src/pages/Dashboard.jsx');
+  assert.match(dash, /<HoldButton[\s\S]*onRemove\(s\)/, 'Remove runs only after a completed hold');
+  assert.ok(!/window\.confirm/.test(dash), 'the hold replaces the browser popup');
 });

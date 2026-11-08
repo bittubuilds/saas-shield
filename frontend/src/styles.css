@@ -234,3 +234,21 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .search-btn { width: 64px; height: 50px; }
   .brand-shatter { margin: 6px auto 18px; }
 }
+
+/* Hold-to-confirm: liquid fill rises while pressed, snaps back on release. */
+.hold-btn { position: relative; overflow: hidden; isolation: isolate; cursor: pointer; user-select: none;
+  -webkit-user-select: none; touch-action: none; -webkit-touch-callout: none; transition: box-shadow .2s ease, transform .1s ease; }
+.hold-btn .hold-fill { position: absolute; left: 0; right: 0; bottom: 0; z-index: -1; height: calc(var(--hold, 0) * 100%);
+  background: linear-gradient(180deg, #ff7a7a, #e23a3a); transition: height .35s cubic-bezier(.2, .8, .2, 1); }
+.hold-btn.is-holding .hold-fill { transition: none; }
+.hold-btn .hold-fill::before { content: ''; position: absolute; left: -10%; right: -10%; top: -7px; height: 14px; border-radius: 50%;
+  background: inherit; opacity: calc(var(--hold, 0) * 3); animation: hold-wave 1s ease-in-out infinite alternate; }
+.hold-btn .hold-label { position: relative; z-index: 1; }
+.hold-btn.is-holding { color: #fff; transform: scale(.985); box-shadow: 0 0 22px rgba(226, 58, 58, .35); }
+.hold-btn.is-done { color: #fff; }
+.hold-btn:focus-visible { outline: 2px solid var(--violet-l); outline-offset: 2px; }
+@keyframes hold-wave { from { transform: translateX(-4%); } to { transform: translateX(4%); } }
+@media (prefers-reduced-motion: reduce) {
+  .hold-btn .hold-fill { transition: none; }
+  .hold-btn .hold-fill::before { animation: none; }
+}

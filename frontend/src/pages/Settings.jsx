@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { deleteAccount } from '../services/api.js';
+import HoldButton from '../components/HoldButton.jsx';
 import { maskEmail } from '../services/api.js';
 
 export default function Settings({ session, onSignOut }) {
@@ -11,13 +12,11 @@ export default function Settings({ session, onSignOut }) {
   const email = session?.user?.email || '';
 
   async function onDelete(e) {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     if (confirm.trim().toUpperCase() !== 'DELETE') {
       setError('Type DELETE exactly to confirm.');
       return;
     }
-    const ok = window.confirm('Delete your account permanently?\n\nThis removes your account, your sites and their scans. Reports already generated become unreachable. This cannot be undone.');
-    if (!ok) return;
     setBusy(true); setError('');
     try {
       await deleteAccount('DELETE');
@@ -56,14 +55,15 @@ export default function Settings({ session, onSignOut }) {
         {done ? (
           <p role="status" className="ok">Account deleted. Signing you out…</p>
         ) : (
-          <form onSubmit={onDelete}>
+          <form onSubmit={(e) => e.preventDefault()}>
             <label htmlFor="confirm-delete">Type DELETE to confirm</label>
             <input id="confirm-delete" value={confirm} onChange={(e) => setConfirm(e.target.value)}
                    autoComplete="off" aria-describedby="delete-help" />
             <p id="delete-help" className="muted small">Case does not matter, but the word must match.</p>
-            <button type="submit" className="btn-danger" disabled={busy}>
-              {busy ? 'Deleting…' : 'Delete my account'}
-            </button>
+            <HoldButton className="btn-danger" onConfirm={onDelete} busy={busy}
+                        ariaLabel="Hold to permanently delete my account">
+              {busy ? 'Deleting…' : 'Hold to delete my account'}
+            </HoldButton>
           </form>
         )}
         {error && <p role="alert" className="err">{error}</p>}
