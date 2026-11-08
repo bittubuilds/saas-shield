@@ -99,12 +99,15 @@ visible in a past session, not reproducible here) or **[unverified]**.
 6. **Resend is still on the test sender**, so real users receive no email. **[reported]**
 7. **Intermittent E2E zero-findings failure** — reproduced 1 in 30 before the freshness fix,
    0 in 30 after, and 0 in the last 3 runs. Root cause **unproven**; do not call it fixed.
-8. **GitHub token rotation is outstanding.** The remote URL was cleaned and verified
-   (`origin` is now `https://github.com/bittubuilds/saas-shield.git`, no userinfo in
-   `.git/config`), but the exposed `gho_` OAuth token has **not** been revoked: it is not
-   the token this CLI holds, so only the owner can revoke it at
-   `https://github.com/settings/applications`. Treat it as live until then.
-   **[remote cleaned: verified · token revoked: unverified/pending]**
+8. **GitHub token rotation: remote cleaned (verified), revocation reported by the owner
+   (not independently verifiable here).** The `origin` URL is now
+   `https://github.com/bittubuilds/saas-shield.git` with no userinfo (`.git/config` clean).
+   The exposed `gho_` OAuth token was revoked by Bittu on 8 Nov 2026 **[reported]**; an
+   agent cannot confirm revocation of a token it no longer holds, so treat it as revoked
+   unless a GitHub audit log says otherwise. Working credentials now come from a classic
+   PAT stored as `$GITHUB_TOKEN_4` (env name is auto-suffixed), used through an ephemeral
+   `credential.helper` and never written into `.git/config`.
+   **[remote cleaned: verified · token revoked: reported · PAT working: verified]**
 
 ## 6. Exact next steps, in order
 
