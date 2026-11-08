@@ -1,5 +1,6 @@
 'use strict';
 const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const config = require('./config');
 const db = require('./db/index');
@@ -129,10 +130,30 @@ app.use(express.static(publicDir, {
   }
 }));
 app.get('/', (req, res) => res.sendFile(path.join(publicDir, 'index.html')));
-app.get('/app', (req, res) => res.sendFile(path.join(publicDir, 'app.html')));
+// The React UI in frontend/ is served at /app once it has been built. Tests
+// keep the vanilla shell so their assertions stay about the shipped bundles.
+const reactDist = path.join(__dirname, '..', 'frontend', 'dist');
+const reactIndex = path.join(reactDist, 'index.html');
+const serveReactUi = config.nodeEnv !== 'test' && fs.existsSync(reactIndex);
+if (serveReactUi) {
+  app.use('/app', express.static(reactDist, {
+    index: false,
+    // Without this /app 301s to /app/, which breaks the exact route below.
+    redirect: false,
+    extensions: false,
+    maxAge: 0,
+    etag: true,
+    setHeaders: (res, filePath) => {
+      // Vite assets are content-hashed; index.html must never be cached.
+      if (/\/assets\//.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      else res.setHeader('Cache-Control', 'no-cache');
+    }
+  }));
+}
+app.get(['/app', '/app/'], (req, res) => res.sendFile(serveReactUi ? reactIndex : path.join(publicDir, 'app.html')));
 
-// Workspace-isolated deep links all render the SPA shell.
-app.get('/app/*', (req, res) => res.sendFile(path.join(publicDir, 'app.html')));
+// Workspace-isolated deep links all render the active SPA shell.
+app.get('/app/*', (req, res) => res.sendFile(serveReactUi ? reactIndex : path.join(publicDir, 'app.html')));
 
 const server = app.listen(config.port, config.host, () => {
   console.log(`SaaS Shield listening on http://localhost:${config.port} (env=${config.nodeEnv})`);

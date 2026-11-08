@@ -6,6 +6,8 @@ import react from '@vitejs/plugin-react';
 // true in development; in production the same rules apply behind one origin.
 export default defineConfig({
   plugins: [react()],
+  // Served by Express at /app, so assets must resolve under the same prefix.
+  base: '/app/',
   server: {
     port: 5173,
     proxy: {
