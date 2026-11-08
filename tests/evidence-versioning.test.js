@@ -344,7 +344,7 @@ function seedAnalysisWindow(competitorId, { createdAt, finishedAt = createdAt, s
 
 test('evidence observed while the analysis was running is not treated as seen', () => {
   const competitorId = seedCompetitor();
-  seedPage(competitorId, { fetchedAt: '2026-11-07T09:59:00.000Z' });
+  seedPage(competitorId, { fetchedAt: hoursAgo(1) });
   record(competitorId, { observedAt: '2026-11-07T10:00:00.500Z', excerpt: 'Pricing page changed to $59' });
   seedAnalysisWindow(competitorId, { createdAt: '2026-11-07T10:00:00.000Z', finishedAt: '2026-11-07T10:00:02.000Z' });
 
@@ -355,7 +355,7 @@ test('evidence observed while the analysis was running is not treated as seen', 
 
 test('evidence observed exactly at the analysis start is not lost to a boundary', () => {
   const competitorId = seedCompetitor();
-  seedPage(competitorId, { fetchedAt: '2026-11-07T09:59:00.000Z' });
+  seedPage(competitorId, { fetchedAt: hoursAgo(1) });
   const at = '2026-11-07T10:00:00.000Z';
   record(competitorId, { observedAt: at, excerpt: 'Boundary observation' });
   seedAnalysisWindow(competitorId, { createdAt: at });
@@ -367,7 +367,7 @@ test('evidence observed exactly at the analysis start is not lost to a boundary'
 
 test('evidence fully consumed before the analysis started counts as fresh', () => {
   const competitorId = seedCompetitor();
-  seedPage(competitorId, { fetchedAt: '2026-11-07T09:59:00.000Z' });
+  seedPage(competitorId, { fetchedAt: hoursAgo(1) });
   record(competitorId, { observedAt: '2026-11-07T09:00:00.000Z', excerpt: 'Old pricing $29' });
   seedAnalysisWindow(competitorId, { createdAt: '2026-11-07T10:00:00.000Z' });
 
@@ -380,7 +380,7 @@ test('evidence fully consumed before the analysis started counts as fresh', () =
 
 test('an interrupted analysis does not mark evidence as seen', () => {
   const competitorId = seedCompetitor();
-  seedPage(competitorId, { fetchedAt: '2026-11-07T09:59:00.000Z' });
+  seedPage(competitorId, { fetchedAt: hoursAgo(1) });
   record(competitorId, { observedAt: '2026-11-07T09:30:00.000Z' });
   seedAnalysisWindow(competitorId, { createdAt: '2026-11-07T10:00:00.000Z', status: 'running' });
 

@@ -6,7 +6,7 @@ import GlassIcon from '../components/GlassIcon.jsx';
 import ScrambledText from '../components/ScrambledText.jsx';
 import SilkBackground from '../components/SilkBackground.jsx';
 import { Empty, Loading } from '../components/Status.jsx';
-import { addWebsite, listWebsites } from '../services/api.js';
+import { addWebsite, listWebsites, removeWebsite } from '../services/api.js';
 
 const FEATURES = [
   { icon: 'bolt', tone: 'indigo', title: 'Smart Scanning', text: 'Automatically scan your website for competitor content.' },
@@ -34,6 +34,7 @@ export default function Dashboard() {
   const [busy, setBusy] = useState(false);
   const [sites, setSites] = useState(null);
   const [sitesError, setSitesError] = useState('');
+  const [removing, setRemoving] = useState('');
   const navigate = useNavigate();
 
   const loadSites = useCallback(() => {
@@ -85,11 +86,20 @@ export default function Dashboard() {
           : (
             <ul className="insights">
               {sites.map((s) => (
-                <li key={s.id}>
+                <li key={s.id} className="site-row">
                   <Link className="card row" to={`/scan/${s.id}`}>
                     <h3>{s.url || s.domain}</h3>
                     <span>{s.kind === 'original' ? 'Your site' : 'Comparison'} · {s.status}</span>
                   </Link>
+                  <button
+                    type="button"
+                    className="remove-btn"
+                    onClick={() => onRemove(s)}
+                    disabled={removing === s.id}
+                    aria-label={`Remove ${s.url || s.domain}`}
+                  >
+                    {removing === s.id ? 'Removing…' : 'Remove'}
+                  </button>
                 </li>
               ))}
             </ul>

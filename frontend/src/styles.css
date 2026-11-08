@@ -179,3 +179,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .row-btn { display: grid; gap: 4px; width: 100%; text-align: left; background: none; border: 0;
   color: inherit; font: inherit; cursor: pointer; padding: 0; }
 .row-btn h3 { margin: 0; }
+
+/* Remove-site affordance: sits beside the card, never inside the link. */
+.site-row { display: flex; align-items: stretch; gap: 10px; }
+.site-row .card.row { flex: 1; }
+.remove-btn {
+  align-self: center; padding: 8px 14px; border-radius: 10px; cursor: pointer;
+  background: transparent; border: 1px solid rgba(255, 90, 90, 0.35);
+  color: #ff8a8a; font-size: 13px; font-weight: 600; white-space: nowrap;
+}
+.remove-btn:hover:not(:disabled) { background: rgba(255, 90, 90, 0.12); border-color: #ff5a5a; }
+.remove-btn:disabled { opacity: 0.5; cursor: default; }

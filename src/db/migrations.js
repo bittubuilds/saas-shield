@@ -934,4 +934,16 @@ module.exports = [
         ON ai_reports(scan_id, input_hash);
     `
   }
+,
+  {
+    version: 14,
+    name: 'website-archive',
+    // Removing a site from the dashboard must not destroy its scans or the reports
+    // that cite them, and `status` has a CHECK constraint, so unhide-by-flag:
+    // archived_at marks it hidden; NULL means visible.
+    sql: `
+      ALTER TABLE websites ADD COLUMN archived_at TEXT;
+      CREATE INDEX IF NOT EXISTS idx_websites_archived ON websites(workspace_id, archived_at);
+    `
+  }
 ];

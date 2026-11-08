@@ -23,7 +23,8 @@ function serializeSite(w) {
     crawl_error: w.crawl_error,
     accessible_page_count: w.accessible_page_count,
     last_scanned_at: w.last_scanned_at,
-    created_at: w.created_at
+    created_at: w.created_at,
+    archived_at: w.archived_at || null
   };
 }
 
@@ -39,7 +40,12 @@ function validateWebsiteUrl(raw) {
 
 // List websites for workspace
 router.get('/workspaces/:workspaceId/websites', requireWorkspace(), (req, res) => {
-  const rows = db.prepare('SELECT * FROM websites WHERE workspace_id=? ORDER BY created_at DESC').all(req.workspace.id);
+  // Removing a site archives it: the row, its scans and its reports stay readable,
+  // it simply stops appearing in the dashboard. ?include_archived=1 shows them again.
+  const includeArchived = String(req.query.include_archived || '') === '1';
+  const rows = includeArchived
+    ? db.prepare('SELECT * FROM websites WHERE workspace_id=? ORDER BY created_at DESC').all(req.workspace.id)
+    : db.prepare('SELECT * FROM websites WHERE workspace_id=? AND archived_at IS NULL ORDER BY created_at DESC').all(req.workspace.id);
   res.json({ websites: rows.map(serializeSite) });
 });
 
@@ -136,13 +142,20 @@ router.patch('/workspaces/:workspaceId/websites/:id', requireWorkspace(), (req, 
   res.json({ website: serializeSite(db.prepare('SELECT * FROM websites WHERE id=?').get(w.id)) });
 });
 
-// Delete website (cascades pages, scans and results of that site)
+// Remove website from the dashboard.
+//
+// This is deliberately an archive, not a DELETE: the site stops being scanned and
+// disappears from the list, but its scans, findings and reports stay readable.
+// Destroying evidence a report already cited would break historical reports.
 router.delete('/workspaces/:workspaceId/websites/:id', requireWorkspace(), (req, res) => {
   const w = db.prepare('SELECT * FROM websites WHERE id=? AND workspace_id=?').get(req.params.id, req.workspace.id);
   if (!w) return res.status(404).json({ error: 'Website not found.' });
-  db.prepare('DELETE FROM websites WHERE id=?').run(w.id);
-  audit(req.workspace.id, req.user.id, 'website.deleted', { id: w.id, url: w.submitted_url });
-  res.json({ ok: true });
+  if (!w.archived_at) {
+    db.prepare("UPDATE websites SET archived_at=?, monitor_enabled=0, updated_at=? WHERE id=? AND workspace_id=?")
+      .run(utcNow(), utcNow(), w.id, req.workspace.id);
+    audit(req.workspace.id, req.user.id, 'website.archived', { id: w.id, url: w.submitted_url });
+  }
+  res.json({ ok: true, archived: true, website: serializeSite(db.prepare('SELECT * FROM websites WHERE id=?').get(w.id)) });
 });
 
 // List crawled pages for a website (monitoring detail)

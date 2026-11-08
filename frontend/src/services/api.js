@@ -97,6 +97,8 @@ export async function addWebsite(url, { kind = 'original', autoScan = true } = {
   return { website: body.website, initialScan: body.initial_scan || null };
 }
 
+export const removeWebsite = (id) => request(ws(`/websites/${enc(id)}`), { method: 'DELETE' });
+
 export const updateWebsite = async (id, patch) =>
   (await request(ws(`/websites/${enc(id)}`), { method: 'PATCH', body: patch })).website;
 

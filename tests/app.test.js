@@ -299,9 +299,14 @@ test('complete user journey: signup, websites, real scan, review, export, persis
   const resume = await a.req('PATCH', `/workspaces/${wsId}/websites/${unrelId}`, { status: 'active' });
   assert.equal(resume.status, 200);
   const del = await a.req('DELETE', `/workspaces/${wsId}/websites/${unrelId}`);
-  assert.equal(del.status, 200);
-  const gone = await a.req('GET', `/workspaces/${wsId}/websites/${unrelId}/pages`);
-  assert.equal(gone.status, 404);
+  assert.equal(del.status, 200, 'remove archives the site');
+  const afterList = await a.req('GET', `/workspaces/${wsId}/websites`);
+  assert.ok(!afterList.data.websites.some((w) => w.id === unrelId), 'a removed site leaves the dashboard');
+  const withArchived = await a.req('GET', `/workspaces/${wsId}/websites?include_archived=1`);
+  assert.ok(withArchived.data.websites.some((w) => w.id === unrelId && w.archived_at),
+    'the row is archived, never destroyed');
+  const pagesKept = await a.req('GET', `/workspaces/${wsId}/websites/${unrelId}/pages`);
+  assert.equal(pagesKept.status, 200, 'evidence stays readable after removal, so old reports keep their sources');
 
   // members management
   const addMember = await a.req('POST', `/workspaces/${wsId}/members`, { email: 'other@example.com', role: 'member' });
