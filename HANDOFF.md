@@ -72,6 +72,12 @@ visible in a past session, not reproducible here) or **[unverified]**.
 - `GET /api/health` runs `SELECT 1` and returns 503 when the DB is unreachable, but it is
   only reachable *after* a successful boot, so it cannot report a boot-time DB failure. **[verified]**
 
+- **The React UI is wired to `/app`** (`src/server.js`): when `frontend/dist/index.html`
+  exists and `NODE_ENV != test`, Express serves the Vite build at `/app` and `/app/*`,
+  else it falls back to the vanilla `public/app.html`. `render.yaml` buildCommand is
+  `npm install && npm run build`. **Not deployed yet** — a deploy also runs migrations
+  8-13 on boot when `DATABASE_URL` is set. **[code committed: verified locally]**
+
 ## 4. Tests already run (7-8 Nov 2026)
 
 | Command | Result |
