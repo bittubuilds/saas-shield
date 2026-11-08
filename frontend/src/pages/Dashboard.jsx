@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
-import BouncingHeadline from '../components/BouncingHeadline.jsx';
 import GlassIcon from '../components/GlassIcon.jsx';
 import ScrambledText from '../components/ScrambledText.jsx';
 import SilkBackground from '../components/SilkBackground.jsx';
-import BrandShatter from '../components/BrandShatter.jsx';
+import ShatterWordmark from '../components/ShatterWordmark.jsx';
 import HoldButton from '../components/HoldButton.jsx';
 import { Empty, Loading } from '../components/Status.jsx';
 import { addWebsite, listWebsites, removeWebsite } from '../services/api.js';
@@ -78,7 +77,6 @@ export default function Dashboard() {
       <section className="hero" id="features">
         <SilkBackground className="silk" />
         <SilkBackground className="silk-ribbon" color="#ff3d9a" speed={0.75} interactive={false} />
-        <BouncingHeadline parts={[{ text: 'Protect Your' }, { text: 'SaaS Business with Smart Intelligence', accent: true }]} />
         <ScrambledText className="lead" text="Detect copied content, analyze competitors and get detailed insights about your SaaS product." />
         <form className="search" onSubmit={onSubmit} noValidate>
           <Icon name="link" size={24} className="search-icon" />
@@ -91,6 +89,7 @@ export default function Dashboard() {
           </button>
         </form>
         {error && <p id="url-error" className="field-error" role="alert">{error}</p>}
+        <ShatterWordmark />
       </section>
 
       <section className="page-narrow" aria-labelledby="sites-h">
@@ -122,7 +121,6 @@ export default function Dashboard() {
           )}
       </section>
 
-      <BrandShatter />
 
       <section className="features" aria-labelledby="feat-h">
         <div className="section-head">
