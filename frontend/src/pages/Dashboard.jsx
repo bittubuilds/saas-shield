@@ -5,6 +5,7 @@ import BouncingHeadline from '../components/BouncingHeadline.jsx';
 import GlassIcon from '../components/GlassIcon.jsx';
 import ScrambledText from '../components/ScrambledText.jsx';
 import SilkBackground from '../components/SilkBackground.jsx';
+import BrandShatter from '../components/BrandShatter.jsx';
 import { Empty, Loading } from '../components/Status.jsx';
 import { addWebsite, listWebsites, removeWebsite } from '../services/api.js';
 
@@ -121,6 +122,8 @@ export default function Dashboard() {
             </ul>
           )}
       </section>
+
+      <BrandShatter />
 
       <section className="features" aria-labelledby="feat-h">
         <div className="section-head">

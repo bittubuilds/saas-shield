@@ -5,7 +5,7 @@ import Icon from './Icon.jsx';
 function Logo() {
   return (
     <Link to="/" className="logo" aria-label="SaaS Shield home">
-      <img src="/logo.png" alt="" width="40" height="44" className="logo-img" />
+      <img src={`${import.meta.env.BASE_URL}logo.png`} srcSet={`${import.meta.env.BASE_URL}logo.png 1x`} alt="SaaS Shield" width="40" height="44" className="logo-img" />
       <span>SaaS Shield</span>
     </Link>
   );
