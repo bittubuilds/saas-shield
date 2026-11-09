@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
+import { DecryptedText } from '../components/bits.jsx';
 import { ErrorState, Loading } from '../components/Status.jsx';
 import { STAGES, cancelScan, describeInitialScan, getInitialScan, retryScan } from '../services/api.js';
 
@@ -61,6 +62,8 @@ export default function Scanning() {
   const pct = Math.round((stageIndex / (STAGES.length - 1)) * 100);
   const stage = STAGES[Math.min(stageIndex, STAGES.length - 1)];
   const active = state && !state.done;
+  // Short technical label for the current phase. Purely cosmetic: it never gates or delays the real progress.
+  const phase = state && (state.done && !state.failed && !state.cancelled ? 'COMPLETE' : ['INITIALIZING', 'ANALYZING', 'VERIFYING', 'COMPLETE'][Math.min(stageIndex, 3)]);
 
   return (
     <section className="page-narrow">
@@ -73,6 +76,7 @@ export default function Scanning() {
         <Loading label="Connecting to scan…" />
       ) : (
         <div className="panel">
+          {phase && !state.failed && !state.cancelled && <p className="phase" aria-hidden="true"><DecryptedText key={phase} text={phase} /></p>}
           <Ring value={pct} />
           <ol className="stages">
             {STAGES.map((s, i) => (

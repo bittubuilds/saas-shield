@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
+import CountUp from '../components/CountUp.jsx';
 import { Empty, ErrorState, Loading } from '../components/Status.jsx';
 import {
   aiPdfUrl, downloadPdf, getAiReport, getAiStatus, getScan, listResults, startAi,
@@ -111,10 +112,10 @@ export default function Report() {
       ) : (
         <>
           <div className="stats">
-            <div className="card stat"><strong>{competitors.length}</strong><span>Competitors analysed</span></div>
-            <div className="card stat"><strong>{findingCount}</strong><span>Findings</span></div>
-            <div className="card stat"><strong>{Array.isArray(report.recommendations) ? report.recommendations.length : 0}</strong><span>Recommendations</span></div>
-            <div className="card stat"><strong>{report.coverage ? report.coverage.competitors_analysed : '—'}</strong><span>Coverage</span></div>
+            <div className="card stat"><strong><CountUp to={competitors.length} /></strong><span>Competitors analysed</span></div>
+            <div className="card stat"><strong><CountUp to={findingCount} /></strong><span>Findings</span></div>
+            <div className="card stat"><strong><CountUp to={Array.isArray(report.recommendations) ? report.recommendations.length : 0} /></strong><span>Recommendations</span></div>
+            <div className="card stat"><strong><CountUp to={report.coverage ? report.coverage.competitors_analysed : '—'} /></strong><span>Coverage</span></div>
           </div>
 
           {report.executive_summary && (
