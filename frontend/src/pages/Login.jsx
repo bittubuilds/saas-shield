@@ -201,6 +201,8 @@ export default function Login({ onSignedIn }) {
 
           <p className="muted small auth-legal">
             By continuing you agree to our <a href="/app/privacy">Privacy Policy</a>.
+            {' · '}
+            <a href="/app/about">About SaaS Shield</a>
           </p>
         </div>
       </section>

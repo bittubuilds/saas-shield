@@ -8,6 +8,7 @@ import Report from './pages/Report.jsx';
 import History from './pages/History.jsx';
 import Competitors from './pages/Competitors.jsx';
 import Privacy from './pages/Privacy.jsx';
+import About from './pages/About.jsx';
 import Settings from './pages/Settings.jsx';
 import Login from './pages/Login.jsx';
 import { loadSession, primaryWorkspace, setWorkspaceId, signOut } from './services/api.js';
@@ -57,6 +58,7 @@ export default function App() {
     return (
       <Routes>
         <Route path="/login" element={<Login onSignedIn={refresh} />} />
+        <Route path="/about" element={<About />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
@@ -66,6 +68,7 @@ export default function App() {
 
   return (
     <Routes>
+      <Route path="/about" element={<About signedIn />} />
       <Route element={<Layout session={session} workspace={space} onSignOut={handleSignOut} />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/scan/:websiteId" element={<Scanning />} />

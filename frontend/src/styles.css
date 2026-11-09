@@ -75,6 +75,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* Footer */
 .footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 24px; padding: 18px 36px;
   border-top: 1px solid var(--border); color: var(--muted); font-size: 16px; }
+.footer-links { display: flex; gap: 22px; }
+.footer-links a:hover { color: var(--violet-l); }
 .brand { display: flex; align-items: center; gap: 12px; }
 .brand strong { color: #fff; font-weight: 600; font-size: 15px; }
 

@@ -1,6 +1,6 @@
 # SaaS Shield — current state (read this first)
 
-_Last updated: 2026-11-09 · GitHub sign-in added next to Google; split sign-in live in production_
+_Last updated: 2026-11-10 · About page added (public, founder-led); GitHub sign-in live in production_
 
 This file exists so a new agent starts from here, not from zero.
 
@@ -91,6 +91,34 @@ The GitHub OAuth App (github.com/settings/developers -> New OAuth App) needs the
 homepage `https://saas-shield.onrender.com` and exactly that callback URL.
 `/api/health` now reports `github_oauth_configured` next to the Google flag.
 
+### About page: founder-led storytelling (public)
+
+`/app/about` is a real page in the React app and works signed in and signed out.
+`App.jsx` mounts it outside `Layout`, so it renders full-bleed with its own slim
+header instead of the app shell.
+
+| File | Role |
+| --- | --- |
+| `frontend/src/pages/About.jsx` | six sections: hero, the problem, the founder, two brands, the product, closing |
+| `frontend/src/about.css` | every rule scoped under `.ab`; shares nothing with the app shell |
+| `frontend/public/founder-bittu.webp` | the supplied portrait, byte-identical (`sha256 e7d3a010…`), no filter, no crop, natural 1856x2320 ratio |
+| `frontend/public/fonts/*.woff2` | self-hosted Inter Tight (variable 100-900) and Instrument Serif (roman + italic), 88 KB total |
+
+Typography is self-hosted on purpose: the server CSP is `font-src 'self'`, so a
+Google Fonts link would be blocked in production and only look right locally.
+
+Motion is one IntersectionObserver revealing `[data-reveal]` blocks, hero lines
+that rise once on mount, and a 2px hairline tracking reading progress. All of it
+collapses under `prefers-reduced-motion`.
+
+Copy rules followed: no invented statistics, no testimonials, no legal claims. The
+product section says what the scanner does and then states plainly that it does not
+decide whether something is lawful copying.
+
+The Bittu Builds link is a single constant (`BITTU_BUILDS`) pointing at
+https://bittubuilds.github.io/bittu-builds/ — verified live on 2026-11-10, not
+invented at render time.
+
 ## Verified (2026-11-09, local server + built bundle)
 
 - `npm test`: 321 tests, 295 pass, 0 fail, 26 skipped.
@@ -163,10 +191,12 @@ local run tested, so the two builds are identical.
 1. **AI provider key missing on Render.** Set `GROQ_API_KEY` (or `AI_API_KEY`) in
    the Render env and redeploy; the report pipeline is otherwise complete. Local
    runs pause with a provider-side error on `groq/openai/gpt-oss-120b`.
-2. Google sign-in and SERPER discovery are still unconfigured in production.
-3. `SERPER_API_KEY` unset on Render, so auto-discovery stays unavailable and the UI
+2. `SERPER_API_KEY` unset on Render, so auto-discovery stays unavailable and the UI
    says so instead of pretending.
-4. Google OAuth coded but not configured (`google_oauth_configured: false`).
+3. Google OAuth consent screen may still be in Testing mode: publish it, or only the
+   listed test users can sign in.
+4. GitHub sign-in has no allowlist: GitHub has no equivalent of Google's test-user
+   gate, so any GitHub account can sign in. Decide whether to restrict it.
 5. Competitors page lists collected intelligence, not the comparison websites on
    the dashboard, so it can look empty right after a scan. Copy is honest; the two
    concepts may want separating later.
@@ -182,7 +212,8 @@ local run tested, so the two builds are identical.
 - `ffef445` OAuth results redirected to the path-routed sign-in page
 - `ac4760b` Auth 2 decision + licence blocker documented
 - `6848522` deploy + security re-run record
-- GitHub sign-in: routes, provider-aware linking, `tests/github-oauth.test.js`
+- `18170ac` GitHub sign-in: routes, provider-aware linking, `tests/github-oauth.test.js`
+- `…` premium founder-led About page (+ self-hosted display fonts, public route)
 - `4….` production verification record (this edit)
 
 ## Useful commands

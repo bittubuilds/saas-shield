@@ -24,7 +24,8 @@ export default function Layout({ session, workspace, onSignOut }) {
   const email = session && session.user ? session.user.email : '';
   const items = MENU.map((m) => ({ label: m.label, ariaLabel: `Go to ${m.label}`, link: m.to }));
   const more = [
-    ...['Features', 'Pricing', 'About', 'Docs'].map((l) => ({ label: l, link: `/#${l.toLowerCase()}` })),
+    ...['Features', 'Pricing', 'Docs'].map((l) => ({ label: l, link: `/#${l.toLowerCase()}` })),
+    { label: 'About', link: '/about' },
     { label: 'Privacy', link: '/privacy' },
     { label: 'Sign out', onClick: onSignOut },
   ];
@@ -40,7 +41,10 @@ export default function Layout({ session, workspace, onSignOut }) {
       <main className="main"><Outlet /></main>
       <footer className="footer">
         <span>© {new Date().getFullYear()} SaaS Shield</span>
-        <nav aria-label="Legal"><Link to="/privacy">Privacy Policy</Link></nav>
+        <nav aria-label="Legal" className="footer-links">
+          <Link to="/about">About</Link>
+          <Link to="/privacy">Privacy Policy</Link>
+        </nav>
       </footer>
     </div>
   );
