@@ -459,7 +459,8 @@ router.get('/google/start', (req, res) => {
 });
 
 router.get('/google/callback', async (req, res) => {
-  const fail = (reason) => res.redirect(303, `${config.publicBaseUrl}/app#/signin?oauth_error=${encodeURIComponent(reason)}`);
+  // The app uses path routing, so failures land on the real sign-in route.
+  const fail = (reason) => res.redirect(303, `${config.publicBaseUrl}/app/login?oauth_error=${encodeURIComponent(reason)}`);
   try {
     if (!oauth.isConfigured()) return fail('not_configured');
 
@@ -505,7 +506,7 @@ router.get('/google/callback', async (req, res) => {
       action: 'oauth_google', outcome: resolved.created ? 'created' : 'ok'
     });
     audit(null, resolved.userId, 'auth.oauth_login', { provider: 'google', created: resolved.created });
-    return res.redirect(303, `${config.publicBaseUrl}/app#/dashboard`);
+    return res.redirect(303, `${config.publicBaseUrl}/app/`);
   } catch (e) {
     console.error('[oauth] callback error:', e.message);
     return fail('server_error');
