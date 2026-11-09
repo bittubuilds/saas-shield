@@ -286,3 +286,42 @@ button { font: inherit; color: inherit; cursor: pointer; }
   text-align: center; cursor: pointer; }
 .wordmark .shatter-base { display: block; }
 @media (max-width: 640px) { .wordmark { font-size: clamp(38px, 13vw, 64px); margin-top: 22px; } }
+
+/* ---- taste pass: one screen per section, deliberate spacing, equal edges ---- */
+:root { --container: 1120px; --gap: clamp(14px, 1.6vw, 20px); --edge: clamp(20px, 4vw, 40px); }
+
+.page-narrow, .features, .hero > * { width: min(100% - (var(--edge) * 2), var(--container)); margin-inline: auto; }
+
+/* Hero owns the first screen: wordmark leads, one plain line, one action. */
+.hero { min-height: calc(100svh - 84px); display: grid; grid-template-rows: 1fr auto 1fr;
+  align-items: center; justify-items: center; gap: clamp(18px, 2.4vw, 30px);
+  padding: clamp(24px, 5vw, 56px) var(--edge) clamp(40px, 7vw, 96px); }
+.hero .lead { max-width: 46ch; font-size: clamp(15px, 1.5vw, 18px); line-height: 1.55; text-align: center; margin: 0; }
+.hero .search { margin: 0; width: min(100%, 560px); height: 64px; border-radius: 18px;
+  background: rgba(12, 11, 22, .82); border: 1px solid rgba(139, 92, 246, .22);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .45); }
+.hero .search:focus-within { border-color: rgba(167, 139, 250, .65); box-shadow: 0 0 0 4px rgba(139, 92, 246, .16); }
+.hero .search-btn { width: 52px; height: 52px; margin-right: 6px; border-radius: 14px; }
+.hero .wordmark { margin: clamp(8px, 2vw, 18px) auto 0; }
+
+/* Sections breathe on a fixed rhythm instead of stacking cards edge to edge. */
+.features, .page-narrow { padding-block: clamp(44px, 7vw, 92px); }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  margin-bottom: clamp(18px, 2.4vw, 30px); }
+.section-head h2 { font-size: clamp(20px, 2.3vw, 27px); letter-spacing: -.01em; }
+
+/* Cards: equal edges, honest 1px border, a 2px lift on hover (no tilt, no shadow pile). */
+.grid { gap: var(--gap); }
+.card { border: 1px solid rgba(255, 255, 255, .07); border-radius: 16px; padding: clamp(18px, 2vw, 24px);
+  transition: transform .18s ease, border-color .18s ease, background .18s ease; }
+.card:hover { transform: translateY(-2px); border-color: rgba(167, 139, 250, .38); }
+.card h3 { font-size: 16px; font-weight: 600; letter-spacing: -.005em; margin-top: 14px; }
+.card p { font-size: 14.5px; line-height: 1.6; color: var(--muted); margin-top: 6px; }
+.site-row .card.row:hover { transform: translateY(-2px); }
+
+@media (max-width: 640px) {
+  .hero { min-height: calc(100svh - 72px); grid-template-rows: auto auto auto; align-content: center; gap: 18px; padding-bottom: 72px; }
+  .hero .search { height: 58px; border-radius: 16px; }
+  .hero .wordmark { margin-top: 6px; }
+  .features, .page-narrow { padding-block: 40px; }
+}

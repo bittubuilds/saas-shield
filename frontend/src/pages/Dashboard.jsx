@@ -10,10 +10,10 @@ import { Empty, Loading } from '../components/Status.jsx';
 import { addWebsite, listWebsites, removeWebsite } from '../services/api.js';
 
 const FEATURES = [
-  { icon: 'bolt', tone: 'indigo', title: 'Smart Scanning', text: 'Automatically scan your website for competitor content.' },
-  { icon: 'chart', tone: 'violet', title: 'Competitor Insights', text: 'Discover who’s copying you and how they do it.' },
-  { icon: 'image', tone: 'purple', title: 'Screenshots', text: 'Capture proof with real screenshots.' },
-  { icon: 'doc', tone: 'blue', title: 'Detailed Reports', text: 'Get comprehensive reports with actionable insights.' },
+  { icon: 'bolt', tone: 'indigo', title: 'Paste your URL', text: 'We crawl the public pages of your site.' },
+  { icon: 'chart', tone: 'violet', title: 'We match text', text: 'Your wording is compared against other sites.' },
+  { icon: 'image', tone: 'purple', title: 'See the evidence', text: 'Every finding links to the page and screenshot.' },
+  { icon: 'doc', tone: 'blue', title: 'Send the report', text: 'Export a PDF you can put in front of anyone.' },
 ];
 
 const PRIVATE = /^(localhost|127\.|0\.0\.0\.0|10\.|192\.168\.|169\.254\.|\[::1\]|::1)/i;
@@ -124,7 +124,7 @@ export default function Dashboard() {
 
       <section className="features" aria-labelledby="feat-h">
         <div className="section-head">
-          <h2 id="feat-h"><span className="bar" />Powerful Features</h2>
+          <h2 id="feat-h"><span className="bar" />How it works</h2>
           <Link className="btn btn-outline" to="/history">All reports <Icon name="arrow" size={16} /></Link>
         </div>
         <div className="grid">
