@@ -325,3 +325,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .hero .wordmark { margin-top: 6px; }
   .features, .page-narrow { padding-block: 40px; }
 }
+
+/* Equal content edges: every section shares one container width. */
+.page-narrow { max-width: var(--container); }
