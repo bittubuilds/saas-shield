@@ -1,6 +1,6 @@
 # SaaS Shield — current state (read this first)
 
-_Last updated: 2026-11-09 · split sign-in deployed to production, security suite re-run and verified live_
+_Last updated: 2026-11-09 · GitHub sign-in added next to Google; split sign-in live in production_
 
 This file exists so a new agent starts from here, not from zero.
 
@@ -49,10 +49,12 @@ Class names are ours (`.auth-split`, `.auth-pane`, `.auth-aside`) and live at th
 bottom of `frontend/src/styles.css` under a marked section; no rule above them was
 changed. Details and the licence/CLI reasoning: `docs/REACTBITS-AUTH-2.md`.
 
-- Google button is real: it reads `/api/auth/config` and stays disabled with a
-  plain note while `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` are missing. It never
-  offers a method the deployment cannot honour.
-- `?oauth_error=<reason>` from the Google callback renders as readable text.
+- Two provider buttons, both real: Google and GitHub. Each reads `/api/auth/config`
+  (`google.enabled`, `github.enabled`) and stays disabled with one plain note while
+  its credentials are missing. The page never offers a method the deployment
+  cannot honour.
+- `?oauth_error=<reason>&provider=google|github` renders as readable text, and the
+  wording names the button the person actually pressed.
   `src/routes/auth-routes.js` now redirects failures to `/app/login?oauth_error=...`
   and successes to `/app/` — the old `#/signin` and `#/dashboard` targets never
   matched the path-based router, so error messages were silently dropped.
@@ -60,6 +62,34 @@ changed. Details and the licence/CLI reasoning: `docs/REACTBITS-AUTH-2.md`.
   brand panel hidden. Checked at 1440, 1024, 768 and 390 px, no horizontal overflow.
 - Auth behaviour unchanged: httpOnly cookie sign-in, instant-mode signup fallback,
   `.field-error` for errors, `.muted role="status"` for notices, spinner while busy.
+
+### GitHub sign-in (added on request)
+
+`GET /api/auth/github/start` -> GitHub consent -> `GET /api/auth/github/callback` ->
+session, mirroring the Google route but built for how GitHub actually behaves:
+
+| Difference | Consequence in the code |
+|---|---|
+| No OIDC id_token | nothing is verified locally; identity is read from `api.github.com/user` with the token we just exchanged (`fetchGithubIdentity`) |
+| No PKCE support | the HMAC-signed HttpOnly state cookie (`shield_oauth_github`, path `/api/auth/github`) plus the server-side secret are the redirect protection |
+| Email can be hidden or unverified | only an address GitHub marks `verified` is trusted (`pickGithubEmail`: primary verified first, else first verified); none -> `email_not_verified`, never a guess |
+
+Account linking is shared with Google: `resolveUser(claims, provider)` keeps the
+`oauth_accounts` row namespaced by provider (a GitHub id `90210` and a Google sub
+`90210` are different people), still refuses to attach to an unverified local
+password account, and stamps `email_verified_source = 'github'`.
+
+Env needed on the deployment:
+
+```
+GITHUB_CLIENT_ID=...
+GITHUB_CLIENT_SECRET=...
+GITHUB_REDIRECT_URI=https://saas-shield.onrender.com/api/auth/github/callback
+```
+
+The GitHub OAuth App (github.com/settings/developers -> New OAuth App) needs the
+homepage `https://saas-shield.onrender.com` and exactly that callback URL.
+`/api/health` now reports `github_oauth_configured` next to the Google flag.
 
 ## Verified (2026-11-09, local server + built bundle)
 
@@ -151,6 +181,8 @@ local run tested, so the two builds are identical.
 - `6d20919` split sign-in with OAuth, adapted from React Bits Auth 2
 - `ffef445` OAuth results redirected to the path-routed sign-in page
 - `ac4760b` Auth 2 decision + licence blocker documented
+- `6848522` deploy + security re-run record
+- GitHub sign-in: routes, provider-aware linking, `tests/github-oauth.test.js`
 - `4….` production verification record (this edit)
 
 ## Useful commands

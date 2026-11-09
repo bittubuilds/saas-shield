@@ -73,17 +73,24 @@ function buildAuthorizeUrl() {
 
 // The state cookie carries only what the callback needs. It is HMAC-signed and
 // HttpOnly, so a tampered cookie is rejected before Google is contacted.
-function signStateCookie(payload) {
-  const secret = config.oauth.google.clientSecret || 'unconfigured';
+function stateSecret(provider = 'google') {
+  const secret = provider === 'github'
+    ? config.oauth.github.clientSecret
+    : config.oauth.google.clientSecret;
+  return secret || 'unconfigured';
+}
+
+function signStateCookie(payload, provider = 'google') {
+  const secret = stateSecret(provider);
   const body = b64url(JSON.stringify(payload));
   const sig = crypto.createHmac('sha256', secret).update(body).digest('base64url');
   return `${body}.${sig}`;
 }
 
-function readStateCookie(value) {
+function readStateCookie(value, provider = 'google') {
   if (typeof value !== 'string' || !value.includes('.')) return null;
   const [body, sig] = value.split('.');
-  const secret = config.oauth.google.clientSecret || 'unconfigured';
+  const secret = stateSecret(provider);
   const expected = crypto.createHmac('sha256', secret).update(body).digest('base64url');
   const a = Buffer.from(sig || '');
   const b = Buffer.from(expected);
@@ -215,15 +222,15 @@ async function exchangeCode(code, codeVerifier, { fetchImpl = globalThis.fetch }
 }
 
 /**
- * Resolve a verified Google identity to a local user.
+ * Resolve a verified provider identity (Google or GitHub) to a local user.
  * @returns {{ok:true, userId:string, linked:boolean, created:boolean} | {ok:false, error:string}}
  */
-function resolveUser(claims) {
+function resolveUser(claims, provider = 'google') {
   const existingLink = db.prepare('SELECT user_id FROM oauth_accounts WHERE provider=? AND provider_user_id=?')
-    .get('google', claims.sub);
+    .get(provider, claims.sub);
   if (existingLink) {
     db.prepare('UPDATE oauth_accounts SET last_login_at=? WHERE provider=? AND provider_user_id=?')
-      .run(utcNow(), 'google', claims.sub);
+      .run(utcNow(), provider, claims.sub);
     return { ok: true, userId: existingLink.user_id, linked: true, created: false };
   }
 
@@ -234,19 +241,19 @@ function resolveUser(claims) {
       // registered it may not control the mailbox.
       return { ok: false, error: 'local_account_unverified' };
     }
-    linkAccount(localUser.id, claims);
+    linkAccount(localUser.id, claims, provider);
     return { ok: true, userId: localUser.id, linked: true, created: false };
   }
 
   // Brand new account. Unusable password hash: this account can only be entered
-  // through Google until the user sets a password.
+  // through the provider until the user sets a password.
   const userId = newId('usr');
   const wsId = newId('wsp');
   const now = utcNow();
   db.exec('BEGIN');
   try {
     db.prepare('INSERT INTO users (id, email, password_hash, name, created_at, email_verified_at, email_verified_source) VALUES (?,?,?,?,?,?,?)')
-      .run(userId, claims.email, 'oauth-only$', claims.name || null, now, now, 'google');
+      .run(userId, claims.email, 'oauth-only$', claims.name || null, now, now, provider);
     db.prepare('INSERT INTO workspaces (id, name, created_at) VALUES (?,?,?)')
       .run(wsId, claims.name ? `${claims.name}'s workspace` : 'My workspace', now);
     db.prepare('INSERT INTO memberships (workspace_id, user_id, role, created_at) VALUES (?,?,?,?)')
@@ -255,7 +262,7 @@ function resolveUser(claims) {
       (workspace_id, immediate_email, digest_enabled, digest_day, digest_hour_utc, min_severity, include_empty_digest, updated_at)
       VALUES (?,1,1,?,?, 'high',0,?)`)
       .run(wsId, config.alerts.defaultDigestDay, config.alerts.defaultDigestHourUtc, now);
-    linkAccount(userId, claims);
+    linkAccount(userId, claims, provider);
     db.exec('COMMIT');
   } catch (e) {
     try { db.exec('ROLLBACK'); } catch { /* ignore */ }
@@ -264,11 +271,125 @@ function resolveUser(claims) {
   return { ok: true, userId, linked: true, created: true };
 }
 
-function linkAccount(userId, claims) {
+function linkAccount(userId, claims, provider = 'google') {
   db.prepare(`INSERT INTO oauth_accounts (provider, provider_user_id, user_id, email, email_verified, created_at, last_login_at)
-              VALUES ('google',?,?,?,1,?,?)
+              VALUES (?,?,?,?,1,?,?)
               ON CONFLICT (provider, provider_user_id) DO UPDATE SET last_login_at=excluded.last_login_at`)
-    .run(claims.sub, userId, claims.email, utcNow(), utcNow());
+    .run(provider, claims.sub, userId, claims.email, utcNow(), utcNow());
+}
+
+// ---------------------------------------------------------------------------
+// GitHub sign-in (OAuth 2.0 authorization code)
+//
+// GitHub differs from Google in three ways that shape this code:
+//   1. No OIDC id_token, so nothing can be verified locally. Identity is only
+//      trusted after calling the API with the token we just exchanged.
+//   2. No PKCE support, so the state cookie (HMAC-signed, HttpOnly) plus the
+//      server-side client secret are the whole of the redirect protection.
+//   3. A GitHub profile can expose an unverified, or a hidden, email address.
+//      Only an address GitHub marks `verified` is ever trusted, and a profile
+//      without one is refused rather than guessed.
+// ---------------------------------------------------------------------------
+function isGithubConfigured() {
+  return config.oauth.github.configured;
+}
+
+function missingGithubConfig() {
+  const missing = [];
+  if (!config.oauth.github.clientId) missing.push('GITHUB_CLIENT_ID');
+  if (!config.oauth.github.clientSecret) missing.push('GITHUB_CLIENT_SECRET');
+  return missing;
+}
+
+function buildGithubAuthorizeUrl() {
+  if (!isGithubConfigured()) {
+    return { ok: false, error: 'not_configured', missing: missingGithubConfig() };
+  }
+  const state = randomToken(24);
+  const url = new URL(config.oauth.github.authorizationEndpoint);
+  url.searchParams.set('client_id', config.oauth.github.clientId);
+  url.searchParams.set('redirect_uri', config.oauth.github.redirectUri);
+  url.searchParams.set('scope', config.oauth.github.scope);
+  url.searchParams.set('state', state);
+  url.searchParams.set('allow_signup', 'true');
+  return { ok: true, url: url.toString(), state, expiresAt: Date.now() + STATE_TTL_MS };
+}
+
+async function exchangeGithubCode(code, { fetchImpl = globalThis.fetch } = {}) {
+  const body = new URLSearchParams({
+    code: String(code),
+    client_id: config.oauth.github.clientId,
+    client_secret: config.oauth.github.clientSecret,
+    redirect_uri: config.oauth.github.redirectUri
+  });
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 10000);
+  try {
+    const res = await fetchImpl(config.oauth.github.tokenEndpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
+      body: body.toString(),
+      signal: ac.signal
+    });
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { /* GitHub answers form-encoded on some errors */ }
+    if (!res.ok || !parsed || !parsed.access_token) {
+      const reason = parsed && (parsed.error_description || parsed.error);
+      return { ok: false, error: reason || `token endpoint HTTP ${res.status}` };
+    }
+    return { ok: true, accessToken: parsed.access_token, scope: parsed.scope || '' };
+  } catch (e) {
+    return { ok: false, error: e.name === 'AbortError' ? 'token endpoint timeout' : `token endpoint error: ${e.message}` };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Primary verified address if there is one, otherwise the first verified one. */
+function pickGithubEmail(emails) {
+  if (!Array.isArray(emails)) return null;
+  const verified = emails.filter((e) => e && e.verified === true && typeof e.email === 'string' && e.email.includes('@'));
+  const primary = verified.find((e) => e.primary === true);
+  const chosen = primary || verified[0];
+  return chosen ? chosen.email.toLowerCase() : null;
+}
+
+async function fetchGithubIdentity(accessToken, { fetchImpl = globalThis.fetch } = {}) {
+  const headers = {
+    accept: 'application/vnd.github+json',
+    authorization: `Bearer ${accessToken}`,
+    'user-agent': 'SaaSShield/0.1',
+    'x-github-api-version': '2022-11-28'
+  };
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 10000);
+  const get = async (url) => {
+    const res = await fetchImpl(url, { headers, signal: ac.signal });
+    if (!res.ok) throw new Error(`${url} returned HTTP ${res.status}`);
+    return res.json();
+  };
+  try {
+    const user = await get(config.oauth.github.userEndpoint);
+    if (!user || user.id === undefined || user.id === null) return { ok: false, error: 'missing_claims' };
+    const emails = await get(config.oauth.github.emailsEndpoint);
+    const email = pickGithubEmail(emails);
+    if (!email) return { ok: false, error: 'email_not_verified_by_provider' };
+    return {
+      ok: true,
+      claims: {
+        sub: String(user.id),
+        email,
+        emailVerified: true,
+        name: user.name || user.login || null,
+        picture: user.avatar_url || null
+      }
+    };
+  } catch (e) {
+    return { ok: false, error: e.name === 'AbortError' ? 'identity endpoint timeout' : `identity endpoint error: ${e.message}` };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // Reset the cached JWKS (tests, or after a key rotation error).
@@ -279,6 +400,12 @@ function clearJwksCache() {
 module.exports = {
   isConfigured,
   missingConfig,
+  isGithubConfigured,
+  missingGithubConfig,
+  buildGithubAuthorizeUrl,
+  exchangeGithubCode,
+  fetchGithubIdentity,
+  pickGithubEmail,
   buildAuthorizeUrl,
   signStateCookie,
   readStateCookie,

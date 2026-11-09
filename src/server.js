@@ -81,6 +81,7 @@ app.get('/api/health', (req, res) => {
     env: config.nodeEnv,
     email_configured: email.describeConfig().configured,
     google_oauth_configured: config.oauth.google.configured,
+    github_oauth_configured: config.oauth.github.configured,
     database: (() => { try { return durability.probe(); } catch (e) { return { error: e.message }; } })(),
     scheduler_enabled: config.scheduler.enabled,
     external_cron_configured: Boolean(config.scheduler.cronSecret)

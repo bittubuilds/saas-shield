@@ -94,6 +94,9 @@ test('auth config reports verification mode and Google availability honestly', a
   assert.ok(r.data.email.missing.length > 0);
   assert.equal(r.data.google.enabled, false);
   assert.deepEqual(r.data.google.missing, ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET']);
+  // GitHub is offered separately and must be just as honest when unset.
+  assert.equal(r.data.github.enabled, false);
+  assert.deepEqual(r.data.github.missing, ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET']);
 });
 
 // ---------------------------------------------------------------------------
@@ -503,4 +506,131 @@ test('accounts created before email verification keep working after the migratio
   const versions = upgraded.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((r) => r.version);
   assert.deepEqual(versions, require('../src/db/migrations').map((m) => m.version), 'every migration ran, in order');
   upgraded.close();
+});
+
+
+// ---------------------------------------------------------------------------
+// GitHub sign-in
+//
+// GitHub has no id_token and no PKCE, so the security story is: signed state
+// cookie, server-side secret, and identity read from the API. These tests cover
+// the parts that can be checked without a real GitHub account.
+// ---------------------------------------------------------------------------
+test('github start refuses to begin when the deployment has no credentials', async () => {
+  await ready();
+  const c = client();
+  const r = await c.req('GET', '/auth/github/start');
+  assert.equal(r.status, 503);
+  assert.equal(r.data.code, 'github_not_configured');
+  assert.deepEqual(r.data.missing, ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET']);
+});
+
+test('github callback fails on the sign-in route, naming the provider', async () => {
+  await ready();
+  const c = client();
+  const r = await c.req('GET', '/auth/github/callback?code=abc&state=xyz');
+  assert.equal(r.status, 303);
+  assert.match(r.headers.get('location'), /\/app\/login\?oauth_error=not_configured&provider=github$/);
+});
+
+test('only an address GitHub reports as verified is trusted', () => {
+  assert.equal(oauth.pickGithubEmail([
+    { email: 'unverified@example.com', primary: true, verified: false },
+    { email: 'ok@example.com', primary: false, verified: true }
+  ]), 'ok@example.com');
+
+  assert.equal(oauth.pickGithubEmail([
+    { email: 'main@example.com', primary: true, verified: true },
+    { email: 'other@example.com', primary: false, verified: true }
+  ]), 'main@example.com', 'the primary address wins');
+
+  assert.equal(oauth.pickGithubEmail([{ email: 'nope@example.com', primary: true, verified: false }]), null);
+  assert.equal(oauth.pickGithubEmail([]), null);
+  assert.equal(oauth.pickGithubEmail(null), null);
+});
+
+test('github identity comes from the API, never from the redirect', async () => {
+  const calls = [];
+  const fakeFetch = async (url, opts = {}) => {
+    calls.push({ url, auth: opts.headers && opts.headers.authorization });
+    if (url.endsWith('/user')) {
+      return { ok: true, json: async () => ({ id: 4242, login: 'octocat', name: 'Mona Lisa', avatar_url: 'https://avatars.example/mona.png' }) };
+    }
+    if (url.endsWith('/user/emails')) {
+      return { ok: true, json: async () => ([
+        { email: 'hidden@example.com', primary: false, verified: false },
+        { email: 'Mona@Example.com', primary: true, verified: true }
+      ]) };
+    }
+    throw new Error('unexpected url ' + url);
+  };
+
+  const r = await oauth.fetchGithubIdentity('gho_token', { fetchImpl: fakeFetch });
+  assert.equal(r.ok, true);
+  assert.equal(r.claims.sub, '4242');
+  assert.equal(r.claims.email, 'mona@example.com', 'email is lowercased');
+  assert.equal(r.claims.name, 'Mona Lisa');
+  assert.ok(calls.every((c) => c.auth === 'Bearer gho_token'), 'the token is sent as a bearer credential');
+
+  const unverified = await oauth.fetchGithubIdentity('gho_token', {
+    fetchImpl: async (url) => url.endsWith('/user')
+      ? { ok: true, json: async () => ({ id: 7, login: 'nobody' }) }
+      : { ok: true, json: async () => ([{ email: 'unverified@example.com', primary: true, verified: false }]) }
+  });
+  assert.equal(unverified.ok, false);
+  assert.equal(unverified.error, 'email_not_verified_by_provider');
+
+  const failed = await oauth.fetchGithubIdentity('bad_token', {
+    fetchImpl: async () => ({ ok: false, status: 401, json: async () => ({}) })
+  });
+  assert.equal(failed.ok, false);
+  assert.match(failed.error, /HTTP 401/);
+});
+
+test('github accounts are created and linked under their own provider', () => {
+  const created = oauth.resolveUser({
+    sub: 'gh-9001', email: 'ghnew@example.com', emailVerified: true, name: 'GitHub New'
+  }, 'github');
+  assert.equal(created.ok, true);
+  assert.equal(created.created, true);
+
+  const user = db.prepare('SELECT * FROM users WHERE id=?').get(created.userId);
+  assert.equal(user.email_verified_source, 'github');
+  assert.equal(user.password_hash, 'oauth-only$');
+
+  const link = db.prepare('SELECT * FROM oauth_accounts WHERE user_id=?').get(created.userId);
+  assert.equal(link.provider, 'github');
+  assert.equal(link.provider_user_id, 'gh-9001');
+
+  // Same numeric sub under Google must not resolve to the GitHub account.
+  const googleSameSub = oauth.resolveUser({
+    sub: 'gh-9001', email: 'ghsub@example.com', emailVerified: true
+  }, 'google');
+  assert.equal(googleSameSub.ok, true);
+  assert.notEqual(googleSameSub.userId, created.userId, 'providers are namespaced');
+
+  const again = oauth.resolveUser({ sub: 'gh-9001', email: 'ghnew@example.com', emailVerified: true }, 'github');
+  assert.equal(again.created, false);
+  assert.equal(again.userId, created.userId, 'a returning GitHub user lands on the same account');
+});
+
+test('a state cookie signed for one provider is rejected by the other', () => {
+  const googleSecret = config.oauth.google.clientSecret;
+  const githubSecret = config.oauth.github.clientSecret;
+  config.oauth.google.clientSecret = 'google-secret-for-this-test';
+  config.oauth.github.clientSecret = 'github-secret-for-this-test';
+  try {
+    const payload = { state: 'abc123', provider: 'github', exp: Date.now() + 60000 };
+    const cookie = oauth.signStateCookie(payload, 'github');
+    assert.equal(oauth.readStateCookie(cookie, 'github').state, 'abc123');
+    assert.equal(oauth.readStateCookie(cookie, 'google'), null, 'cross-provider replay must fail');
+    const [body, sig] = cookie.split('.');
+    const forgedBody = Buffer.from(JSON.stringify({ ...payload, state: 'hijack' })).toString('base64url');
+    assert.equal(oauth.readStateCookie(`${forgedBody}.${sig}`, 'github'), null, 'a swapped payload must fail');
+    const flippedSig = sig.slice(0, -2) + (sig.endsWith('AA') ? 'BB' : 'AA');
+    assert.equal(oauth.readStateCookie(`${body}.${flippedSig}`, 'github'), null, 'a damaged signature must fail');
+  } finally {
+    config.oauth.google.clientSecret = googleSecret;
+    config.oauth.github.clientSecret = githubSecret;
+  }
 });

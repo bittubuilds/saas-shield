@@ -71,6 +71,19 @@ const config = {
       tokenEndpoint: env.GOOGLE_TOKEN_ENDPOINT || 'https://oauth2.googleapis.com/token',
       jwksEndpoint: env.GOOGLE_JWKS_URI || 'https://www.googleapis.com/oauth2/v3/certs',
       issuer: env.GOOGLE_ISSUER || 'https://accounts.google.com'
+    },
+    // GitHub OAuth App. GitHub has no OIDC id_token and no PKCE, so identity is
+    // established by calling the API with the token we just exchanged, and the
+    // only email we trust is one GitHub reports as verified.
+    github: {
+      clientId: env.GITHUB_CLIENT_ID || '',
+      clientSecret: env.GITHUB_CLIENT_SECRET || '',
+      redirectUri: env.GITHUB_REDIRECT_URI || '',
+      authorizationEndpoint: env.GITHUB_AUTH_ENDPOINT || 'https://github.com/login/oauth/authorize',
+      tokenEndpoint: env.GITHUB_TOKEN_ENDPOINT || 'https://github.com/login/oauth/access_token',
+      userEndpoint: env.GITHUB_USER_ENDPOINT || 'https://api.github.com/user',
+      emailsEndpoint: env.GITHUB_EMAILS_ENDPOINT || 'https://api.github.com/user/emails',
+      scope: env.GITHUB_OAUTH_SCOPE || 'read:user user:email'
     }
   },
 
@@ -190,6 +203,13 @@ config.oauth.google.configured = Boolean(
 // Absolute OAuth callback. Derived from PUBLIC_BASE_URL unless explicitly set.
 config.oauth.google.redirectUri = config.oauth.google.redirectUri ||
   `${config.publicBaseUrl}/api/auth/google/callback`;
+
+config.oauth.github.configured = Boolean(
+  config.oauth.github.clientId && config.oauth.github.clientSecret
+);
+
+config.oauth.github.redirectUri = config.oauth.github.redirectUri ||
+  `${config.publicBaseUrl}/api/auth/github/callback`;
 
 config.monitor.frequencies = config.monitor.frequencies
   .map((n) => Number(n))

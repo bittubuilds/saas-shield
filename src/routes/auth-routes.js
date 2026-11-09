@@ -14,6 +14,7 @@ const oauth = require('../oauth');
 
 const router = express.Router();
 const OAUTH_COOKIE = 'shield_oauth';
+const OAUTH_COOKIE_GITHUB = 'shield_oauth_github';
 
 function validEmail(email) {
   return typeof email === 'string' && /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/.test(email.trim());
@@ -165,6 +166,10 @@ router.get('/config', (req, res) => {
     google: {
       enabled: oauth.isConfigured(),
       missing: oauth.isConfigured() ? [] : oauth.missingConfig()
+    },
+    github: {
+      enabled: oauth.isGithubConfigured(),
+      missing: oauth.isGithubConfigured() ? [] : oauth.missingGithubConfig()
     }
   });
 });
@@ -513,5 +518,82 @@ router.get('/google/callback', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// GitHub sign-in
+// ---------------------------------------------------------------------------
+router.get('/github/start', (req, res) => {
+  const built = oauth.buildGithubAuthorizeUrl();
+  if (!built.ok) {
+    return res.status(503).json({
+      error: 'GitHub sign-in is not configured on this deployment.',
+      code: 'github_not_configured',
+      missing: built.missing
+    });
+  }
+  // No PKCE: GitHub's OAuth App flow does not support it. The signed HttpOnly
+  // state cookie and the server-side client secret carry that job instead.
+  res.cookie(OAUTH_COOKIE_GITHUB, oauth.signStateCookie({
+    state: built.state,
+    provider: 'github',
+    exp: built.expiresAt
+  }, 'github'), {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: config.cookieSecure,
+    maxAge: oauth.STATE_TTL_MS,
+    path: '/api/auth/github'
+  });
+  res.redirect(302, built.url);
+});
+
+router.get('/github/callback', async (req, res) => {
+  const fail = (reason) => res.redirect(303, `${config.publicBaseUrl}/app/login?oauth_error=${encodeURIComponent(reason)}&provider=github`);
+  try {
+    if (!oauth.isGithubConfigured()) return fail('not_configured');
+
+    const cookie = parseCookies(req)[OAUTH_COOKIE_GITHUB];
+    res.clearCookie(OAUTH_COOKIE_GITHUB, { path: '/api/auth/github' });
+    const state = oauth.readStateCookie(cookie, 'github');
+    if (!state) return fail('state_cookie_invalid');
+
+    const { code, state: returnedState, error } = req.query;
+    if (error) return fail(String(error).slice(0, 60));
+    if (!code || typeof code !== 'string') return fail('missing_code');
+    if (typeof returnedState !== 'string' || returnedState !== state.state) return fail('state_mismatch');
+
+    const exchanged = await oauth.exchangeGithubCode(code);
+    if (!exchanged.ok) {
+      console.error('[oauth] github code exchange failed:', exchanged.error);
+      return fail('exchange_failed');
+    }
+
+    // No id_token to verify: the token itself is only as trustworthy as the API
+    // call it enables, so the identity is read from GitHub directly.
+    const identity = await oauth.fetchGithubIdentity(exchanged.accessToken);
+    if (!identity.ok) {
+      logAuthEvent({ ip: req.ip, action: 'oauth_github', outcome: identity.error });
+      return fail(identity.error === 'email_not_verified_by_provider' ? 'email_not_verified' : 'identity_failed');
+    }
+
+    const resolved = oauth.resolveUser(identity.claims, 'github');
+    if (!resolved.ok) {
+      logAuthEvent({ email: identity.claims.email, ip: req.ip, action: 'oauth_github', outcome: resolved.error });
+      return fail(resolved.error);
+    }
+
+    startSession(res, resolved.userId);
+    logAuthEvent({
+      email: identity.claims.email, userId: resolved.userId, ip: req.ip,
+      action: 'oauth_github', outcome: resolved.created ? 'created' : 'ok'
+    });
+    audit(null, resolved.userId, 'auth.oauth_login', { provider: 'github', created: resolved.created });
+    return res.redirect(303, `${config.publicBaseUrl}/app/`);
+  } catch (e) {
+    console.error('[oauth] github callback error:', e.message);
+    return fail('server_error');
+  }
+});
+
 module.exports = router;
+
 module.exports.meHandler = meHandler;

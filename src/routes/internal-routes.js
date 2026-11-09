@@ -68,6 +68,7 @@ router.get('/status', requireCronSecret, (req, res) => {
     config: {
       email_verification_required: config.auth.requireEmailVerification,
       google_oauth_configured: config.oauth.google.configured,
+      github_oauth_configured: config.oauth.github.configured,
       monitor_frequencies: config.monitor.frequencies,
       ssrf_private_ips_allowed: config.ssrf.allowPrivateIps
     }
