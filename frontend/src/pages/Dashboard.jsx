@@ -5,6 +5,8 @@ import GlassIcon from '../components/GlassIcon.jsx';
 import ScrambledText from '../components/ScrambledText.jsx';
 import SilkBackground from '../components/SilkBackground.jsx';
 import ShatterWordmark from '../components/ShatterWordmark.jsx';
+import SplitTagline from '../components/SplitTagline.jsx';
+import ExampleResult from '../components/ExampleResult.jsx';
 import HoldButton from '../components/HoldButton.jsx';
 import { Empty, Loading } from '../components/Status.jsx';
 import { addWebsite, listWebsites, removeWebsite } from '../services/api.js';
@@ -27,6 +29,15 @@ function normalizeUrl(input) {
     if (!u.hostname.includes('.') || PRIVATE.test(u.hostname)) return null;
     return u.href;
   } catch { return null; }
+}
+
+/** Moves the card spotlight under the pointer (design port, purely decorative). */
+function trackSpot(e) {
+  const card = e.target.closest && e.target.closest('.card');
+  if (!card) return;
+  const r = card.getBoundingClientRect();
+  card.style.setProperty('--mx', `${e.clientX - r.left}px`);
+  card.style.setProperty('--my', `${e.clientY - r.top}px`);
 }
 
 export default function Dashboard() {
@@ -52,7 +63,7 @@ export default function Dashboard() {
       await removeWebsite(site.id);
       setSites(await listWebsites());
     } catch (e) {
-      setSitesError(e.message || 'Could not remove this site.');
+      setSitesError(e.message || `Could not remove ${label}.`);
     } finally {
       setRemoving('');
     }
@@ -75,8 +86,14 @@ export default function Dashboard() {
   return (
     <>
       <section className="hero" id="features">
+        <div className="aurora" aria-hidden="true" />
         <SilkBackground className="silk" />
         <SilkBackground className="silk-ribbon" color="#ff3d9a" speed={0.75} interactive={false} />
+        <div className="stage-logo" aria-hidden="true">
+          <img src={`${import.meta.env.BASE_URL}logo.png`} alt="" width="150" height="170" />
+        </div>
+        <ShatterWordmark />
+        <SplitTagline className="hero-tag" text="Catch copycats. Keep the proof." />
         <ScrambledText className="lead" text="Detect copied content, analyze competitors and get detailed insights about your SaaS product." />
         <form className="search" onSubmit={onSubmit} noValidate>
           <Icon name="link" size={24} className="search-icon" />
@@ -89,53 +106,54 @@ export default function Dashboard() {
           </button>
         </form>
         {error && <p id="url-error" className="field-error" role="alert">{error}</p>}
-        <ShatterWordmark />
+        {sites && sites.length === 0 && <ExampleResult />}
       </section>
 
-      <section className="page-narrow" aria-labelledby="sites-h">
-        <div className="section-head">
-          <h2 id="sites-h" className="sub-h"><span className="bar" />Your websites</h2>
-        </div>
-        {sitesError ? <p className="field-error" role="alert">{sitesError}</p>
-          : !sites ? <Loading label="Loading websites…" />
-          : sites.length === 0 ? <Empty>No websites yet. Add one above to start the first check.</Empty>
-          : (
-            <ul className="insights">
-              {sites.map((s) => (
-                <li key={s.id} className="site-row">
-                  <Link className="card row" to={`/scan/${s.id}`}>
-                    <h3>{s.url || s.domain}</h3>
-                    <span>{s.kind === 'original' ? 'Your site' : 'Comparison'} · {s.status}</span>
-                  </Link>
-                  <HoldButton
-                    className="remove-btn"
-                    onConfirm={() => onRemove(s)}
-                    busy={removing === s.id}
-                    ariaLabel={`Hold to remove ${s.url || s.domain}`}
-                  >
-                    {removing === s.id ? 'Removing…' : 'Hold to remove'}
-                  </HoldButton>
-                </li>
-              ))}
-            </ul>
-          )}
-      </section>
+      <div className="below">
+        <section className="page-narrow" aria-labelledby="sites-h">
+          <div className="section-head">
+            <h2 id="sites-h" className="sub-h">Your websites</h2>
+          </div>
+          {sitesError ? <p className="field-error" role="alert">{sitesError}</p>
+            : !sites ? <Loading label="Loading websites…" />
+            : sites.length === 0 ? <Empty>No websites yet. Add one above to start the first check.</Empty>
+            : (
+              <ul className="insights">
+                {sites.map((s) => (
+                  <li key={s.id} className="site-row">
+                    <Link className="card row" to={`/scan/${s.id}`}>
+                      <h3>{s.url || s.domain}</h3>
+                      <span>{s.kind === 'original' ? 'Your site' : 'Comparison'} · {s.status}</span>
+                    </Link>
+                    <HoldButton
+                      className="remove-btn"
+                      onConfirm={() => onRemove(s)}
+                      busy={removing === s.id}
+                      ariaLabel={`Hold to remove ${s.url || s.domain}`}
+                    >
+                      {removing === s.id ? 'Removing…' : 'Hold to remove'}
+                    </HoldButton>
+                  </li>
+                ))}
+              </ul>
+            )}
+        </section>
 
-
-      <section className="features" aria-labelledby="feat-h">
-        <div className="section-head">
-          <h2 id="feat-h"><span className="bar" />How it works</h2>
-          <Link className="btn btn-outline" to="/history">All reports <Icon name="arrow" size={16} /></Link>
-        </div>
-        <div className="grid">
-          {FEATURES.map((f) => (
-            <article className="card" key={f.title}>
-              <GlassIcon icon={f.icon} tone={f.tone} />
-              <h3>{f.title}</h3><p>{f.text}</p>
-            </article>
-          ))}
-        </div>
-      </section>
+        <section className="features" aria-labelledby="feat-h">
+          <div className="section-head">
+            <h2 id="feat-h">Powerful Features</h2>
+            <Link className="btn btn-outline" to="/history">All reports <Icon name="arrow" size={16} /></Link>
+          </div>
+          <div className="grid" onPointerMove={trackSpot}>
+            {FEATURES.map((f) => (
+              <article className="card spot" key={f.title}>
+                <GlassIcon icon={f.icon} tone={f.tone} />
+                <h3>{f.title}</h3><p>{f.text}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
     </>
   );
 }
