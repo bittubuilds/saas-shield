@@ -1,64 +1,85 @@
 # SaaS Shield — current state (read this first)
 
-_Last updated: 2026-11-09 16:05 IST · main @ f84ed3c (design port) · nothing uncommitted_
+_Last updated: 2026-11-09 · frontend integration landed, verified locally, not yet pushed_
 
-This file exists so a new agent starts from here, not from zero. Everything below is
-committed; `main` auto-deploys on Render.
+This file exists so a new agent starts from here, not from zero.
 
-## Where things live
+## Architecture
 
-| Surface | URL | What it is |
-|---|---|---|
-| `/` | saas-shield.onrender.com | One-line redirect to `/app` (functional app) |
-| `/app` | saas-shield.onrender.com/app | The working React product: signup/login, add site, scan, findings, PDF report, history, competitors, privacy, settings |
-| `/premium-preview.html` | …/premium-preview.html | The user-supplied design file, served **byte-identical** (sha256 77b79f5cb949…) |
-| API | `/api/health` | Reports backend, migration version, table count, durability |
+Two source trees, deliberately separated:
 
-## What is already built and deployed
+| Path | What it is |
+|---|---|
+| `src/` | Express backend: routes, auth, DB (SQLite locally, Postgres in production), crawler, scanner, AI, PDF |
+| `frontend/` | React 18 + Vite SPA. `base: '/app/'`, `BrowserRouter basename="/app"` |
+| `public/` | Marketing page at `/`, the byte-identical `premium-preview.html`, vanilla `app.html` fallback used by tests |
+| `tests/` | Node test-runner suite (backend + frontend static-source assertions) |
 
-- Privacy Policy at `/privacy`, footer link in the app shell.
-- Settings at `/settings`, delete account behind typed `DELETE` + hold-to-confirm;
-  `DELETE /api/auth/account` deletes the user, memberships and any workspace where
-  they are the sole member, keeps `audit_events` with `user_id` nulled.
-- Hold-to-confirm (`frontend/src/components/HoldButton.jsx`) on Remove website and
-  Delete account.
-- SAAS SHIELD wordmark with the real Shatter Type port
-  (`frontend/public/shatter.c824b1d1.js` + `ShatterWordmark.jsx`).
-- Design port of the approved preview, first pass (`f84ed3c`, see
-  `docs/DESIGN-PORT.md`): floating header with the Menu toggle, sliding side menu
-  with colour slabs, hero aurora + logo stage + split tagline + pill search +
-  example-result panel, dotted grid, spotlight feature cards, "Powerful Features".
-- Logo loads from `import.meta.env.BASE_URL + 'logo.png'`.
+`src/server.js` serves `frontend/dist` at `/app` when it exists (`serveReactUi`), with
+`/app` and `/app/*` both returning `index.html` so client routes survive a refresh.
+In `NODE_ENV=test` the React bundle is skipped so tests assert against shipped files.
 
-## Verified state of the tree
+## Frontend
 
-- `npm test` at `f84ed3c`: 321 tests, **295 pass, 0 fail, 26 skipped**.
-  One network-dependent test failed once and passed on re-run; treat the suite as
-  green but not hermetic.
-- `cd frontend && npx vite build` passes (25.6 kB CSS / 214.8 kB JS).
-- Browser checks at 1440×1000 and 390×844: no horizontal overflow, drawer opens and
-  closes correctly, example result 660 px / 326 px wide.
+`frontend/src` is the supplied final frontend (`saas-shield-frontend-final.zip`),
+adopted whole: pages (Dashboard, Scanning, Report, History, Competitors, Settings,
+Privacy, Login) plus the dependency-free effects layer — `StaggeredMenu`,
+`ElectricLogo`, `Aurora`/`aurora.js`, `AnimatedList`, `SplitText`, `CountUp`,
+`FadeContent`, `TechText`, `BounceText`, `ShardWordmark`, `bits.jsx`
+(ClickSpark, DotGrid, Magnet, ScrollFloat, ScrollReveal, SpotlightCard,
+DecryptedText). No animation library is installed; `package.json` stays
+react + react-dom + react-router-dom.
+
+`frontend/src/services/api.js` is unchanged from the ZIP and matches the backend
+route-for-route (verified by driving every call over HTTP). It uses same-origin
+`/api` with `credentials: 'include'`; auth stays httpOnly cookie based.
+
+**Fix carried on top of the ZIP:** `Dashboard.jsx` now sends
+`kind: 'original'` for the first site and `kind: 'comparison'` for every later one,
+with a one-line hint under the search. The backend allows a single original per
+workspace, so without this a second URL was rejected and no scan could ever start.
+
+The dashboard's "Example result" card is demo data (`MATCHES`) and is labelled as
+such; real numbers always come from the API.
+
+## Verified (2026-11-09, local server + built bundle)
+
+- `npm test`: 321 tests, 295 pass, 0 fail, 26 skipped.
+- `npm run build` (root, as Render runs it): succeeds; lazy `Aurora` chunk emitted.
+- Real scan end to end in a browser: signup → add site → add comparison →
+  scan runs → report → history → competitors → settings → logout. Wikipedia
+  vs its mobile mirror: 625 pages compared, 123 findings.
+- `/app/history` and `/app/privacy` survive a hard refresh; no horizontal overflow
+  at 390 px; slide-out menu opens and closes.
+- `GET /reports/export.pdf` → 200 `application/pdf`. AI endpoints answer honestly
+  (no report invented) when the provider is paused or unconfigured.
 
 ## Known gaps, in priority order
 
-1. **Finish the design port on the inner pages** (`docs/DESIGN-PORT.md` § Not ported
-   yet): Report, Scanning, History, Competitors, Settings, Privacy, Login still use
-   the pre-port card/heading language. The preview only defined the dashboard, so
-   these need a judgement call, not a copy.
-2. Preview flourishes still missing: electric-logo canvas, click spark, result-list
-   glide, heading letter reveal.
-3. `SERPER_API_KEY` not set on Render, so competitor discovery stays manual/limited.
+1. **Nothing is pushed.** Every commit below is local; the sandbox GitHub token
+   returns 401. Production still runs `0f70001`. Reconnect GitHub, then push.
+2. AI report generation pauses in this sandbox (provider error on
+   `groq/openai/gpt-oss-120b`). The UI reports the real state; the provider needs
+   checking on Render where the key and quota are real.
+3. `SERPER_API_KEY` unset on Render, so auto-discovery stays unavailable and the UI
+   says so instead of pretending.
 4. Google OAuth coded but not configured (`google_oauth_configured: false`).
-5. Pushing from an agent sandbox needs a live GitHub token; the stored one was
-   rejected (401) on 2026-11-09, so work was committed locally and must be pushed
-   after the owner reconnects GitHub.
+5. Competitors page lists collected intelligence, not the comparison websites on
+   the dashboard, so it can look empty right after a scan. Copy is honest; the two
+   concepts may want separating later.
+
+## Commits added in this session
+
+- `f84ed3c` first-pass design port (superseded by the ZIP adoption below)
+- `1576484` design-port docs
+- frontend adoption + comparison-kind fix + this document
 
 ## Useful commands
 
 ```bash
-npm test                                   # full suite (SQLite)
-node --test tests/app.test.js              # fastest smoke test
-(cd frontend && npx vite build)            # must pass before any push
+npm test                                    # full suite
+npm run build                               # backend + frontend production build
+(cd frontend && npx vite build)             # frontend only
 DATABASE_FILE=./data/dev.db PORT=3000 NODE_ENV=development node src/server.js
-sha256sum public/premium-preview.html      # must stay 77b79f5c…
+sha256sum public/premium-preview.html       # must stay 77b79f5c…
 ```
