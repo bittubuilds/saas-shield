@@ -1,6 +1,6 @@
 # SaaS Shield — current state (read this first)
 
-_Last updated: 2026-11-09 · frontend integration landed, verified locally, not yet pushed_
+_Last updated: 2026-11-09 · integrated frontend deployed to production and verified there_
 
 This file exists so a new agent starts from here, not from zero.
 
@@ -54,13 +54,31 @@ such; real numbers always come from the API.
 - `GET /reports/export.pdf` → 200 `application/pdf`. AI endpoints answer honestly
   (no report invented) when the provider is paused or unconfigured.
 
+## Verified on production (2026-11-09, 16:5x IST)
+
+Deployed via `main` `0f70001..134dd70`; Render rebuilt automatically from the
+blueprint and now serves `app/assets/index-CakRDldO.js` — the same bundle hash the
+local run tested, so the two builds are identical.
+
+- A throwaway account ran the real flow: signup → example.com → example.org →
+  scan `completed` → report page → history row → `reports/export.pdf` 200
+  `application/pdf`. Account then deleted through `DELETE /auth/account`
+  (`{confirmed, workspaces: 1 removed, audit retained}`), session dead afterwards.
+- Signed-out the login card renders; `/app/history` and `/app/privacy` survive a
+  hard refresh (they redirect to sign-in, as protected routes should); 390 px has
+  no horizontal overflow.
+- `/api/health`: Postgres, 42 tables, migration 14, writable, scheduler on.
+- **AI is not configured in production** (`ai_configured: false`, provider groq,
+  model `openai/gpt-oss-120b`). The Render env needs `GROQ_API_KEY` (or
+  `AI_API_KEY`); nothing in `render.yaml` sets it. Until then "Run analysis"
+  tells the user it is unavailable instead of inventing a report.
+
 ## Known gaps, in priority order
 
-1. **Nothing is pushed.** Every commit below is local; the sandbox GitHub token
-   returns 401. Production still runs `0f70001`. Reconnect GitHub, then push.
-2. AI report generation pauses in this sandbox (provider error on
-   `groq/openai/gpt-oss-120b`). The UI reports the real state; the provider needs
-   checking on Render where the key and quota are real.
+1. **AI provider key missing on Render.** Set `GROQ_API_KEY` (or `AI_API_KEY`) in
+   the Render env and redeploy; the report pipeline is otherwise complete. Local
+   runs pause with a provider-side error on `groq/openai/gpt-oss-120b`.
+2. Google sign-in and SERPER discovery are still unconfigured in production.
 3. `SERPER_API_KEY` unset on Render, so auto-discovery stays unavailable and the UI
    says so instead of pretending.
 4. Google OAuth coded but not configured (`google_oauth_configured: false`).
@@ -72,7 +90,10 @@ such; real numbers always come from the API.
 
 - `f84ed3c` first-pass design port (superseded by the ZIP adoption below)
 - `1576484` design-port docs
-- frontend adoption + comparison-kind fix + this document
+- `07df745` frontend adoption from the supplied ZIP
+- `c6473c1` comparison-kind fix so scans can start
+- `134dd70` this document
+- `4….` production verification record (this edit)
 
 ## Useful commands
 
