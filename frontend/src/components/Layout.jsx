@@ -40,11 +40,13 @@ export default function Layout({ session, workspace, onSignOut }) {
       <div className="nav-spacer" aria-hidden="true" />
       <main className="main"><Outlet /></main>
       <footer className="footer">
-        <span>© {new Date().getFullYear()} SaaS Shield</span>
-        <nav aria-label="Legal" className="footer-links">
-          <Link to="/about">About</Link>
-          <Link to="/privacy">Privacy Policy</Link>
-        </nav>
+        <div className="wrap footer-wrap">
+          <span>© {new Date().getFullYear()} SaaS Shield</span>
+          <nav aria-label="Legal" className="footer-links">
+            <Link to="/about">About</Link>
+            <Link to="/privacy">Privacy Policy</Link>
+          </nav>
+        </div>
       </footer>
     </div>
   );

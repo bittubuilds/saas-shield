@@ -25,17 +25,15 @@
 /* ---- band 1: the hero, exactly one screen ---- */
 .db-hero {
   position: relative; overflow: hidden;
+  background:
+    radial-gradient(58% 46% at 22% 8%, rgba(109, 40, 217, .34), transparent 70%),
+    radial-gradient(46% 40% at 82% 2%, rgba(29, 78, 216, .26), transparent 72%),
+    radial-gradient(40% 34% at 52% 30%, rgba(139, 92, 246, .16), transparent 74%);
   min-height: 100svh;
   display: flex; flex-direction: column; justify-content: center;
   padding-block: clamp(88px, 11vh, 128px) clamp(40px, 6vh, 72px);
 }
-.db-glow {
-  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
-  width: 100vw; height: 460px; z-index: 0;
-  opacity: .55; pointer-events: none;
-  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 100%);
-  mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 100%);
-}
+
 .db-hero-wrap { display: grid; gap: 0; }
 
 .db-lock { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -125,11 +123,15 @@
 
 /* Three real icons instead of a slogan row. */
 .db-signals { margin: clamp(20px, 2.6vw, 28px) 0 0; display: grid; gap: 10px; }
-.db-signals li { display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; line-height: 1.45; color: var(--db-body); }
-.db-signals svg { flex: none; margin-top: 1px; color: #b9a3ff; }
+.db-signals li { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-bottom: 9px; border-bottom: 1px solid var(--db-line-soft); font-size: 13.5px; line-height: 1.45; color: var(--db-body); }
+.db-signals svg { flex: none; color: #b9a3ff; order: 2; }
 
 /* ---- bands 2-5 ---- */
-.db-band { padding-block: clamp(64px, 9vw, 112px); border-top: 1px solid var(--db-line-soft); }
+.db-band {
+  min-height: 100svh;
+  display: flex; flex-direction: column; justify-content: center;
+  padding-block: clamp(64px, 8vh, 88px);
+}
 .db-sec-h {
   display: flex; align-items: baseline; justify-content: space-between; gap: 14px;
 }
@@ -161,6 +163,18 @@
 .db-empty { padding: 20px 0; color: var(--db-body); font-size: 14px; line-height: 1.55; max-width: 42ch; }
 
 /* example result: text on the left, the finding list on the k=6 line */
+.db-work-grid {
+  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--db-gap); row-gap: clamp(32px, 4vw, 48px); align-items: start;
+}
+.db-work-main { grid-column: 1 / span 6; min-width: 0; display: flex; flex-direction: column; }
+.db-work-side { grid-column: 7 / span 6; min-width: 0; }
+.db-work-main > h2, .db-why-wrap > h2 { font-size: 21px; font-weight: 700; letter-spacing: -.02em; margin: 0; }
+.db-work-main .db-sites { margin-top: clamp(18px, 2.4vw, 26px); }
+.db-work-link { margin-top: auto; padding-top: clamp(20px, 3vw, 30px); }
+.db-side-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.db-side-h h3 { font-size: 17px; font-weight: 700; letter-spacing: -.02em; margin: 0; }
+
 .db-split { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--db-gap); align-items: start; }
 .db-split-l { grid-column: 1 / span 6; min-width: 0; }
 .db-ex-list { grid-column: 7 / span 6; min-width: 0; }
@@ -209,7 +223,25 @@
    page depth carries an offset instead of a glow. */
 .db-band .hold-btn.is-holding { box-shadow: 0 6px 18px rgba(0, 0, 0, .5); }
 
-/* what it does: four columns on the same 12-col grid */
+/* what it does: four columns, then the one statement, then the close */
+.db-why-wrap { display: flex; flex-direction: column; }
+.db-why-wrap .db-caps-grid { margin-top: clamp(20px, 2.6vw, 30px); }
+.db-statement-hold {
+  margin-top: clamp(32px, 4vw, 46px);
+  --ink: #f4f3f8; --bg: #07070d; --accent: #c4b5fd;
+  --font-display: var(--db-serif); --display-weight: 400; --display-tracking: -.012em;
+  --t-h2: clamp(22px, 2.6vw, 31px);
+}
+.db-statement {
+  margin: 0; max-width: 40ch;
+  font-family: var(--db-serif); font-size: clamp(22px, 2.6vw, 31px);
+  line-height: 1.28; letter-spacing: -.012em; text-wrap: pretty;
+}
+.db-statement strong { font-weight: inherit; }
+.db-statement .mo-w { color: var(--db-dim); transition: color .18s ease; }
+.db-statement .mo-w.is-on { color: var(--db-ink); }
+.db-statement strong .mo-w.is-on { color: #c4b5fd; }
+.db-why .db-close-row { margin-top: clamp(26px, 3.4vw, 40px); }
 .db-band-h { margin: 0; }
 .db-caps-grid {
   display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -226,6 +258,12 @@
 }
 .db-cap h3 { margin-top: 6px; font-size: 17px; font-weight: 700; letter-spacing: -.025em; }
 .db-cap p { margin-top: 7px; font-size: 14px; line-height: 1.55; color: var(--db-body); }
+
+/* the method, drawn */
+.db-flow {
+  display: block; width: 100%; height: auto; margin-top: clamp(24px, 3.2vw, 38px);
+  max-height: 172px;
+}
 
 /* closing call */
 .db-close { border-top: 1px solid var(--db-line); }
@@ -247,8 +285,8 @@
 
 /* ---- responsive ---- */
 @media (max-width: 980px) {
-  .db-hero-split, .db-split { grid-template-columns: minmax(0, 1fr); gap: 32px; }
-  .db-hero-l, .db-hero-r, .db-split-l, .db-ex-list { grid-column: 1 / -1; }
+  .db-hero-split, .db-split, .db-work-grid { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  .db-hero-l, .db-hero-r, .db-split-l, .db-ex-list, .db-work-main, .db-work-side { grid-column: 1 / -1; }
   .db-hero-split { align-items: start; }
   .db-cap { grid-column: span 6; }
 }
@@ -257,7 +295,6 @@
   .db-compose { flex-wrap: wrap; padding-bottom: 8px; }
   .db-input { height: 48px; }
   .db-btn { width: 100%; height: 48px; }
-  .db-glow { height: 300px; opacity: .45; }
   .db-site { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .db-remove { justify-self: start; }
   .db-cap { grid-column: 1 / -1; }
@@ -265,6 +302,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .db-compose, .db-btn, .db-cta, .db-ex-bar i, .db-site-link b, .db-sec-link { transition: none; }
+  .db-compose, .db-btn, .db-cta, .db-ex-bar i, .db-site-link b, .db-sec-link, .db-statement .mo-w { transition: none; }
   .db-ex-bar i { transform: none; }
+  .db-statement .mo-w { color: var(--db-ink); }
+  .db-statement strong .mo-w { color: #c4b5fd; }
 }

@@ -44,30 +44,43 @@ such; real numbers always come from the API.
 
 #### Dashboard audit: what the taste-skill gate reports now
 
-`design-taste-frontend` v2.5.1 gate, run against a script-free snapshot of `/app` with one
-website added, went 39 FAIL (first round) -> 36 FAIL after the section rebuild. Fixed, and
-verified in the code rather than by the number:
+`design-taste-frontend` v2.5.1 `gate`, run against a script-free snapshot of `/app` with one
+website added, over two passes: **39 FAIL -> 36 -> 17 -> 12**. The page is now three bands, each
+exactly one screen at 1440 (900/900/900) and 390:
 
-- hero is exactly one screen (0-900 at 1440 and 390); it owns the space under the fixed menu
-  (`.main:has(> .db-hero) { padding-top: 0 }`)
-- the page is a run of `main > section`, each with one `.wrap` and one `h2`; the hero keeps only
-  the `h1`, so no two section headings share a screen's worth of scroll
-- the hero split, the example split and the capability grid all sit on one 12-column grid with a
-  24px gutter, so the right column starts on the k=6 line and text starts on the container edge
-- list rows are readable with scripts off and with reduced motion: the entrance is a Web
-  Animations call from `AnimatedList`, not a hidden CSS state
-- focus rings sit on the element (inset 2px, `#a78bfa`) instead of an offset ring that a crop
-  could miss
-- the hero has a drawn report preview (inline SVG) and the first screen states what it runs on
-  and what it returns
+1. hero: h1, the composer, a drawn report preview (inline SVG), and the facts line
+   (`Reads up to 25 pages per scan · Runs in your browser · Exports to PDF`; 25 is
+   `CRAWL_MAX_PAGES_PER_SITE`'s default in `src/config.js`)
+2. "Your websites": the list on the left, a finding on the right, on the k=6 split line
+3. "What it does": four capabilities, the page's one moment, the drawn method, and the close
 
-Still reported, and deliberately not "fixed": the gate's landing-page rhythm rules
-(one or two full screens per section, every section 55% full, no short footer section), the
-"dealt moment", and its own `header.nav` / `nav__toggle` starter conventions. Satisfying them
-means a scrollytelling page of four full-viewport bands holding one list row each, which is the
-opposite of a console. Two further reports are measurement artefacts: the four `focus-visible`
-hits are tab stops below the fold that the checker never scrolls to, and `div#root` cannot be
-anything other than a div.
+What the second pass fixed, and why it is real:
+
+- **one section per screen**: bands are `min-height: 100svh`; the hero owns the menu clearance
+  (`.main:has(> .db-hero) { padding-top: 0 }`), so nothing of the next band shows on load
+- **the moment runs**: the kit's own runtime is vendored to `frontend/public/moments/`
+  (`moments.js`, `lib.js`, `word-highlight/`), declared in `index.html`, and mounts the dealt
+  `word-highlight` on the statement. Rest state is `--db-dim` (5.6:1), reduced motion and no
+  script show the words in full ink
+- **no script-dependent content**: list rows animate from a Web Animations call in
+  `AnimatedList`, never from a hidden CSS state
+- **focus rings on the control**: inset 2px `#a78bfa`
+- **layers**: the hero wash is a CSS radial ground on the section, not a child div; the WebGL
+  `Aurora` chunk and the fixed `ClickSpark` canvas are gone from this page
+- **edges**: the footer holds one `.wrap`; the hero `.wrap` holds one `.hero-text`; signals put
+  their icon at the end of the line so the words start on the split line
+- the "sample data" apology note is gone; no rules across the container
+
+**The 12 that remain, and why they stay:**
+
+| finding | count | why |
+|---|---|---|
+| focus-visible | 4 | tab stops below the fold; the checker never scrolls, the ring is present (inset 2px) |
+| section-height, one-section, neighbour | 3 | the footer is 54px. Making a legal footer a full screen is worse than the finding |
+| one-heading | 1 | two h2s share a screen at 5.1% of scroll positions (3% allowed); the bands are exactly one screen apart, so a 2px window at the seam |
+| nav, menu-toggle | 2 | the checker wants its own starter markup (`header.nav`, `.nav__toggle` flipped by `system.js`); the real toggle binds `aria-expanded` to React state |
+| effect-kind | 1 | the snapshot has no scripts, so the vendored runtime never runs; the mount is verified live (`data-moments-ready="1"`, 20 words wrapped) |
+| container-edges | 1 | `div#root` is React's mount point and cannot be a `header`/`main`/`footer` |
 
 #### Shared page container
 
