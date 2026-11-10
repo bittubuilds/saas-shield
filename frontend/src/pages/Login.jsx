@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import Icon from '../components/Icon.jsx';
+import { Link } from 'react-router-dom';
+import '../login.css';
 import { getAuthConfig, signIn, signUp } from '../services/api.js';
 
 // Reasons the OAuth callbacks can send back. Both providers land here with
@@ -53,6 +54,16 @@ function GitHubMark() {
   );
 }
 
+function AlertIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" strokeWidth="1.4">
+      <path d="M8 1.9 15 14H1L8 1.9Z" strokeLinejoin="round" />
+      <path d="M8 6v3.4" strokeLinecap="round" />
+      <circle cx="8" cy="11.6" r=".75" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export default function Login({ onSignedIn }) {
   const [mode, setMode] = useState('signin');
   const [email, setEmail] = useState('');
@@ -79,6 +90,14 @@ export default function Login({ onSignedIn }) {
     setError(template ? template(provider) : `${provider} sign-in did not complete. Please try again.`);
   }, []);
 
+  const modeIsSignup = mode === 'signup';
+
+  useEffect(() => {
+    const previous = document.title;
+    document.title = modeIsSignup ? 'Create your account — SaaS Shield' : 'Sign in — SaaS Shield';
+    return () => { document.title = previous; };
+  }, [modeIsSignup]);
+
   const google = authConfig && authConfig.google;
   const googleReady = !!(google && google.enabled);
   const github = authConfig && authConfig.github;
@@ -86,7 +105,6 @@ export default function Login({ onSignedIn }) {
   const missingProviders = authConfig
     ? [googleReady ? null : 'Google', githubReady ? null : 'GitHub'].filter(Boolean)
     : [];
-  const modeIsSignup = mode === 'signup';
 
   async function submit(e) {
     e.preventDefault();
@@ -120,107 +138,122 @@ export default function Login({ onSignedIn }) {
   }
 
   return (
-    <div className="auth-split">
-      <section className="auth-pane">
-        <div className="auth-pane-inner">
-          <a className="auth-brand" href="./" aria-label="SaaS Shield">
-            <img className="logo-img" src={`${import.meta.env.BASE_URL}logo.png`} alt="" width="28" height="32" />
+    <div className="lg">
+      <div className="lg-main">
+        <div className="lg-top">
+          <a className="lg-brand" href="./" aria-label="SaaS Shield">
+            <img src={`${import.meta.env.BASE_URL}logo.png`} alt="" width="26" height="29" />
             <span>SaaS Shield</span>
           </a>
+          <nav className="lg-topnav" aria-label="Secondary">
+            <Link to="/about">About</Link>
+          </nav>
+        </div>
 
-          <h1 className="auth-heading">{modeIsSignup ? 'Create your account' : 'Welcome back'}</h1>
-          <p className="muted auth-sub">
-            {modeIsSignup
-              ? 'One account, and the scanner starts watching for copied content.'
-              : 'Sign in to run a scan and see what has been copied.'}
-          </p>
+        <div className="lg-center">
+          <div className="lg-col">
+            <h1 className="lg-h lg-rise">
+              {modeIsSignup ? (<>Create your <em>account.</em></>) : (<>Welcome <em>back.</em></>)}
+            </h1>
+            <p className="lg-sub lg-rise" style={{ '--lg-d': '60ms' }}>
+              {modeIsSignup
+                ? 'One account, and the scanner starts watching for copied content.'
+                : 'Sign in to run a scan and see what has been copied.'}
+            </p>
 
-          <div className="auth-oauth">
-            <button
-              type="button"
-              className="oauth-btn"
-              disabled={!googleReady || busy}
-              onClick={() => { window.location.assign('/api/auth/google/start'); }}
-            >
-              <GoogleMark />
-              <span>Continue with Google</span>
-            </button>
-            <button
-              type="button"
-              className="oauth-btn oauth-btn-github"
-              disabled={!githubReady || busy}
-              onClick={() => { window.location.assign('/api/auth/github/start'); }}
-            >
-              <GitHubMark />
-              <span>Continue with GitHub</span>
-            </button>
-            {missingProviders.length > 0 && (
-              <p className="muted small oauth-note">
-                Sign-in with {missingProviders.join(' and ')} is not configured on this deployment. Use your email below.
-              </p>
-            )}
-          </div>
+            <div className="lg-oauth lg-rise" style={{ '--lg-d': '110ms' }}>
+              <button
+                type="button"
+                className="lg-provider"
+                disabled={!googleReady || busy}
+                onClick={() => { window.location.assign('/api/auth/google/start'); }}
+              >
+                <GoogleMark />
+                <span>Continue with Google</span>
+              </button>
+              <button
+                type="button"
+                className="lg-provider"
+                disabled={!githubReady || busy}
+                onClick={() => { window.location.assign('/api/auth/github/start'); }}
+              >
+                <GitHubMark />
+                <span>Continue with GitHub</span>
+              </button>
+              {missingProviders.length > 0 && (
+                <p className="lg-note">
+                  Sign-in with {missingProviders.join(' and ')} is not configured on this deployment. Use your email below.
+                </p>
+              )}
+            </div>
 
-          <div className="auth-divider" role="separator" aria-label="or">
-            <span>or continue with email</span>
-          </div>
+            <div className="lg-or" role="separator" aria-label="or">or continue with email</div>
 
-          <form onSubmit={submit} noValidate className="stack">
-            {modeIsSignup && (
-              <label className="form-row">
-                <span>Name</span>
-                <input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" placeholder="Optional" />
+            <form onSubmit={submit} noValidate className="lg-form">
+              {modeIsSignup && (
+                <label className="lg-field">
+                  <span className="lg-label">Name</span>
+                  <input
+                    className="lg-input" value={name} onChange={(e) => setName(e.target.value)}
+                    autoComplete="name" placeholder="Optional" />
+                </label>
+              )}
+              <label className="lg-field">
+                <span className="lg-label">Email</span>
+                <input
+                  className="lg-input" type="email" required value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email" placeholder="you@example.com" aria-invalid={!!error} />
               </label>
-            )}
-            <label className="form-row">
-              <span>Email</span>
-              <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email" placeholder="you@example.com" aria-invalid={!!error} />
-            </label>
-            <label className="form-row">
-              <span>Password</span>
-              <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
-                autoComplete={modeIsSignup ? 'new-password' : 'current-password'} placeholder="At least 8 characters" />
-            </label>
+              <label className="lg-field">
+                <span className="lg-label">Password</span>
+                <input
+                  className="lg-input" type="password" required value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete={modeIsSignup ? 'new-password' : 'current-password'}
+                  placeholder="At least 8 characters" aria-invalid={!!error} />
+              </label>
 
-            {error && <p className="field-error" role="alert">{error}</p>}
-            {notice && <p className="muted" role="status">{notice}</p>}
+              {error && (
+                <p className="lg-alert" role="alert"><AlertIcon /><span>{error}</span></p>
+              )}
+              {notice && <p className="lg-status" role="status">{notice}</p>}
 
-            <button className="btn btn-primary auth-submit" type="submit" disabled={busy}>
-              {busy ? <span className="spinner" /> : <Icon name="user" size={18} />}
-              {modeIsSignup ? 'Create account' : 'Sign in'}
-            </button>
-          </form>
+              <button className="lg-submit" type="submit" disabled={busy}>
+                {busy ? <span className="spinner" /> : null}
+                {modeIsSignup ? 'Create account' : 'Sign in'}
+              </button>
+            </form>
 
-          <p className="muted auth-switch">
-            {modeIsSignup ? 'Already have an account?' : 'No account yet?'}{' '}
-            <button className="link-btn" type="button" onClick={switchMode}>
-              {modeIsSignup ? 'Sign in' : 'Create one'}
-            </button>
-          </p>
+            <p className="lg-switch">
+              {modeIsSignup ? 'Already have an account?' : 'No account yet?'}{' '}
+              <button className="lg-link" type="button" onClick={switchMode}>
+                {modeIsSignup ? 'Sign in' : 'Create one'}
+              </button>
+            </p>
 
-          <p className="muted small auth-legal">
-            By continuing you agree to our <a href="/app/privacy">Privacy Policy</a>.
-            {' · '}
-            <a href="/app/about">About SaaS Shield</a>
-          </p>
-        </div>
-      </section>
-
-      <aside className="auth-aside" aria-hidden="true">
-        <div className="auth-aside-glow" />
-        <div className="auth-aside-inner">
-          <div className="auth-aside-mark">
-            <img className="logo-img" src={`${import.meta.env.BASE_URL}logo.png`} alt="" width="44" height="50" />
+            <p className="lg-legal">
+              By continuing you agree to our <a href="/app/privacy">Privacy Policy</a>.
+              {' · '}
+              <Link to="/about">About SaaS Shield</Link>
+            </p>
           </div>
-          <h2 className="auth-aside-title">Know the moment your pages show up somewhere else.</h2>
-          <ul className="auth-points">
-            <li><Icon name="search" size={18} /> Scans the sites you choose, on demand</li>
-            <li><Icon name="doc" size={18} /> Shows the matching passage side by side</li>
-            <li><Icon name="chart" size={18} /> Keeps a report you can export and share</li>
-          </ul>
-          <p className="auth-aside-foot">Runs on your own deployment. Your content stays with you.</p>
         </div>
+      </div>
+
+      <aside className="lg-aside">
+        <span className="lg-thread" aria-hidden="true" />
+        <p className="lg-quote">
+          Know the moment your pages show up <span className="lg-quiet">somewhere else.</span>
+        </p>
+        <ul className="lg-points">
+          <li><span className="lg-tick" aria-hidden="true">i</span><span>Scans the sites you choose, on demand</span></li>
+          <li><span className="lg-tick" aria-hidden="true">ii</span><span>Shows the matching passage side by side</span></li>
+          <li><span className="lg-tick" aria-hidden="true">iii</span><span>Keeps a report you can export and share</span></li>
+        </ul>
+        <p className="lg-aside-foot">
+          Built in public. <Link to="/about">Read the story</Link>
+        </p>
       </aside>
     </div>
   );
