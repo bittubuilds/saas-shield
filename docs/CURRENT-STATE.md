@@ -213,6 +213,43 @@ invented at render time.
 - `GET /reports/export.pdf` → 200 `application/pdf`. AI endpoints answer honestly
   (no report invented) when the provider is paused or unconfigured.
 
+## Dashboard: taste-skill gate, 12 -> 6 (2026-11-10)
+
+The dashboard audit started at 39 findings, reached 12 after the band rework, and is now 6.
+What changed in this pass, all of it structural rather than cosmetic:
+
+- **The page closes on its own screen.** `Layout` renders `footer.closing.db-closing` on `/` only:
+  the wordmark, the statement, a six-item recap of what a scan keeps, and the legal row. Other
+  routes keep the slim `.footer` strip. This cleared `section-height`, `one-section` and
+  `neighbour` (the old 54px footer could never be one screen, and at 390 px it peeked into the
+  method band's last screen).
+- **The closing band is not empty.** Its right column is a real recap list, not padding, which
+  cleared `empty-area` (54% empty with only two blocks in a 900px band).
+- **One split grid on the page.** The closing columns now use `.db-split` / `.db-split-l` /
+  `.db-split-r`, so the fourth band's right column starts on the same x (732 at 1440) as the hero
+  and the work band. Phones stack it, and the stack rule sits after the desktop rule so it wins.
+- **One heading per screen.** "Your websites" is a small `.db-kicker` label with an `.sr-only` h2
+  behind it, so the page shows one h2 instead of two competing ones.
+- **The nav is the container, not the viewport.** `.sm-header` is centred on `min(100% -
+  2*var(--gutter), var(--content))`, so its bar runs from the content's left edge to its right
+  edge (100..1340 at 1440, 16..374 at 390). The toggle is `button.nav__toggle` with a single
+  label ("Menu" / "Close") instead of two stacked words, and the header carries `nav` again.
+  Two dead legacy `.nav` rules that styled a bordered marketing card were removed; nothing
+  referenced them.
+- **The moment module is in the document.** `index.html` modulepreloads
+  `moments/word-highlight/moment.js`, not just `moments.js`, so the runtime is discoverable
+  without executing the page.
+- **Phone bands are whole screens.** At <=620px the bands are `min-height: 100svh` (the method
+  band two screens) with trimmed row padding, so 390x844 measures 844 / 844 / 1688 / 844.
+
+The 6 that remain are artifacts of how the checker reads a script-free snapshot, not defects:
+
+| finding | why it stays |
+| --- | --- |
+| `focus-visible` x4 | Tab stops 5, 9, 10, 11 sit below the fold; the checker tabs from scroll 0 and judges the ring against that viewport. Each element does take the ring when scrolled to. |
+| `menu-toggle` | The checker clicks in a document with every `<script>` removed, so React cannot flip `aria-expanded`. In a real browser the button opens the panel and the label becomes "Close". |
+| `container-edges` | `div#root` is the React mount point. Its `<div>` cannot be renamed. |
+
 ## Verified on production after the dashboard rework (2026-11-10, 11:3x IST)
 
 `main` `f099a99..3c3f083` pushed and rebuilt by Render automatically; `/app` now serves

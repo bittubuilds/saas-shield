@@ -246,7 +246,8 @@ export default function Dashboard() {
       <section className="db-band db-work-band" aria-labelledby="sites-h">
         <div className="wrap db-work-grid">
           <div className="db-work-main">
-            <h2 id="sites-h">Your websites</h2>
+            <h2 id="sites-h" className="sr-only">Your websites</h2>
+            <p className="db-kicker" aria-hidden="true">Your websites</p>
             <p className="db-sec-note">
               The first site you add becomes your original. Add a second to check against it.
             </p>

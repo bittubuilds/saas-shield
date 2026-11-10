@@ -259,6 +259,12 @@
 .db-cap h3 { margin-top: 6px; font-size: 17px; font-weight: 700; letter-spacing: -.025em; }
 .db-cap p { margin-top: 7px; font-size: 14px; line-height: 1.55; color: var(--db-body); }
 
+/* the section that carries no heading of its own */
+.db-kicker {
+  font-size: 11.5px; font-weight: 500; letter-spacing: .2em; text-transform: uppercase;
+  color: var(--db-dim); margin: 0 0 14px;
+}
+
 /* the method, drawn */
 .db-flow {
   display: block; width: 100%; height: auto; margin-top: clamp(24px, 3.2vw, 38px);
@@ -290,7 +296,16 @@
   .db-hero-split { align-items: start; }
   .db-cap { grid-column: span 6; }
 }
+@media (max-width: 980px) {
+  .db-closing-top .db-split-l, .db-closing-top .db-split-r { grid-column: 1 / -1; }
+  .db-closing-top { gap: 34px; }
+}
 @media (max-width: 620px) {
+  /* a band is a whole number of screens on a phone too */
+  .db-band { min-height: calc(100svh * 1); padding-block: 54px; }
+  .db-why { min-height: calc(100svh * 2); }
+  .db-site-link { min-height: 44px; padding: 3px 0; }
+  .db-site-link small { margin-top: 2px; }
   .db-hero { padding-block: 96px 48px; }
   .db-compose { flex-wrap: wrap; padding-bottom: 8px; }
   .db-input { height: 48px; }
@@ -306,4 +321,45 @@
   .db-ex-bar i { transform: none; }
   .db-statement .mo-w { color: var(--db-ink); }
   .db-statement strong .mo-w { color: #c4b5fd; }
+}
+
+
+/* the page's close: one screen, the mark and the legal row */
+.db-closing {
+  display: flex; min-height: 100svh; border-top: 1px solid var(--db-line-soft);
+  background: radial-gradient(70% 60% at 20% 100%, rgba(109, 40, 217, .18), transparent 72%);
+}
+.db-closing > .wrap {
+  display: flex; flex-direction: column; justify-content: space-between; gap: 40px;
+  width: 100%; padding-block: clamp(56px, 8.4vh, 88px);
+}
+.db-closing-top { align-items: start; }
+.db-closing-top .db-split-r { grid-column: 7 / -1; min-width: 0; }
+.db-closing-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--db-line-soft); }
+.db-closing-list li {
+  display: flex; gap: 16px; align-items: baseline; padding: 15px 0;
+  border-bottom: 1px solid var(--db-line-soft); font-size: 14.5px; color: var(--db-body);
+}
+.db-closing-list span {
+  font-size: 11px; letter-spacing: .16em; color: var(--db-dim); font-variant-numeric: tabular-nums;
+}
+.db-closing-eye {
+  font-size: 11.5px; letter-spacing: .2em; text-transform: uppercase; color: var(--db-dim); margin: 0;
+}
+.db-closing-line {
+  margin: 22px 0 0; font-size: clamp(40px, 7vw, 104px); line-height: 1.02;
+  letter-spacing: -.032em; font-weight: 600; color: var(--db-ink);
+}
+.db-closing-line em { font-family: var(--db-serif); font-style: italic; font-weight: 400; color: #b9a3ff; letter-spacing: -.012em; }
+.db-closing-foot {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding-top: 20px; border-top: 1px solid var(--db-line-soft);
+  font-size: 12.5px; color: var(--db-dim);
+}
+.db-closing-foot .footer-links a { color: var(--db-body); }
+.db-closing-foot .footer-links a:hover { color: #fff; }
+
+/* the closing split stacks on a phone; this must follow the rule above it */
+@media (max-width: 980px) {
+  .db-closing-top .db-split-l, .db-closing-top .db-split-r { grid-column: 1 / -1; }
 }

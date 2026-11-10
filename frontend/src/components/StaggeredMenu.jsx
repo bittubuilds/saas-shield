@@ -49,11 +49,11 @@ export default function StaggeredMenu({
   return (
     <div className={`sm-wrap sm-${position} ${open ? 'is-open' : ''} ${scrolled && !open ? 'is-scrolled' : ''}`} style={style} data-open={open}>
       {open && <div className="sm-scrim" onClick={() => setOpen(false)} aria-hidden="true" />}
-      <header className="sm-header">
+      <header className="nav sm-header">
         <div className="sm-logo">{logo}</div>
-        <button ref={toggle} className="sm-toggle" type="button" aria-expanded={open} aria-controls="sm-panel"
+        <button ref={toggle} className="sm-toggle nav__toggle" type="button" aria-expanded={open} aria-controls="sm-panel"
           aria-label={open ? 'Close menu' : 'Open menu'} onClick={() => setOpen((o) => !o)}>
-          <span className="sm-txt" aria-hidden="true"><span className="sm-txt-in"><span>Menu</span><span>Close</span></span></span>
+          <span className="sm-txt" aria-hidden="true"><span className="sm-txt-in">{open ? 'Close' : 'Menu'}</span></span>
           <span className="sm-icon" aria-hidden="true"><i /><i /></span>
         </button>
       </header>
