@@ -325,14 +325,36 @@ Every page of documentation that ships with the app, written against this build.
 - **Mobile**: below 860px the sidebar becomes an off-canvas drawer behind a 44px
   `Contents` pill, with `aria-expanded`, a scrim that closes it, Escape to close and a close
   on navigate. No horizontal overflow at 390px; tables scroll inside their own wrapper.
-- **Design**: one ground `#07070a`, hairline `rgba(255,255,255,.075)`, violet `#a78bfa` only
-  for links, active states and step numbers. Body 15px/1.72 at `#cdcbdb` (12.6:1), muted
-  `#9e9cb2` (7.5:1), labels `#8a889e` (5.8:1) after the contrast pass, headings Inter Tight
-  600 with tight tracking.
+- **Design**: one ground `#07070a`, then the app's own tokens (`--border`, `--text`,
+  `--muted`, `--violet-l`, `--surface-2`) so the shell cannot drift from the product; violet
+  only for links, active states and step numbers. Body 16px/1.7 at `#cdcbdb` on a 58ch
+  measure (522px, ~75 characters) inside a 1180px grid. Muted `#9e9cb2` (7.5:1), labels
+  `#8a889e` (5.8:1), smallest type 11.5px, headings Inter Tight 600 with tight tracking.
+- **Impeccable pass (2026-11-10)**: the reading surface was measured against the shipped
+  skill's detectors. Line length 94 → 75 characters, labels 10.5px → 11.5px, callouts
+  rebuilt without the coloured side bar, `text-wrap: pretty`/`balance` on prose, list items
+  and headings (which removed every orphaned last word), and the FAQ regrouped under three
+  real `h2`s instead of jumping `h1` → `h3`. Detector result: 0 findings on all 35 articles
+  at 1440, and 0 at 1024 / 768 / 390 / 320.
+- **Performance**: the docs route is `React.lazy` + `Suspense` in `App.jsx`. Docs ships as
+  its own chunk (`Docs-*.js`, ~22.9kB gzipped) instead of riding in the dashboard bundle,
+  which fell from 319kB to 248kB.
+- **Keyboard**: a `Skip to content` link is the first tab stop and moves focus to `#dc-main`
+  (`tabIndex={-1}`). Search results are real listbox options (`role="option"` +
+  `aria-selected`), driven from the input via `aria-activedescendant`, not buttons nested
+  inside options. The mobile drawer takes focus on open (first nav link), returns it to the
+  toggle on Escape or scrim dismiss, and is `visibility: hidden` while shut so its 35 links
+  stay out of the tab order; the hide is delayed to the end of the slide-out, the show is
+  immediate.
 
 Verified on the built bundle at 1440 and 390: all 35 pages return content (no empty body),
 46 internal links resolve to routes that exist, search returns body hits, the TOC scrolls
 and marks itself, the drawer opens/navigates/closes, zero page errors, `npm test` 308 pass.
+
+Re-verified live on Render after `540b256`: computed body 16px/27.2px on a 522px measure in
+a 1180px grid, `text-wrap: pretty` active, skip link first in the tab order, 7 index cards,
+drawer focus on "Introduction" at 390px, no horizontal overflow at either width, zero page
+errors.
 
 The honesty rules the content follows, because they are easy to break later:
 
