@@ -42,6 +42,33 @@ workspace, so without this a second URL was rejected and no scan could ever star
 The dashboard's "Example result" card is demo data (`MATCHES`) and is labelled as
 such; real numbers always come from the API.
 
+#### Dashboard audit: what the taste-skill gate reports now
+
+`design-taste-frontend` v2.5.1 gate, run against a script-free snapshot of `/app` with one
+website added, went 39 FAIL (first round) -> 36 FAIL after the section rebuild. Fixed, and
+verified in the code rather than by the number:
+
+- hero is exactly one screen (0-900 at 1440 and 390); it owns the space under the fixed menu
+  (`.main:has(> .db-hero) { padding-top: 0 }`)
+- the page is a run of `main > section`, each with one `.wrap` and one `h2`; the hero keeps only
+  the `h1`, so no two section headings share a screen's worth of scroll
+- the hero split, the example split and the capability grid all sit on one 12-column grid with a
+  24px gutter, so the right column starts on the k=6 line and text starts on the container edge
+- list rows are readable with scripts off and with reduced motion: the entrance is a Web
+  Animations call from `AnimatedList`, not a hidden CSS state
+- focus rings sit on the element (inset 2px, `#a78bfa`) instead of an offset ring that a crop
+  could miss
+- the hero has a drawn report preview (inline SVG) and the first screen states what it runs on
+  and what it returns
+
+Still reported, and deliberately not "fixed": the gate's landing-page rhythm rules
+(one or two full screens per section, every section 55% full, no short footer section), the
+"dealt moment", and its own `header.nav` / `nav__toggle` starter conventions. Satisfying them
+means a scrollytelling page of four full-viewport bands holding one list row each, which is the
+opposite of a console. Two further reports are measurement artefacts: the four `focus-visible`
+hits are tab stops below the fold that the checker never scrolls to, and `div#root` cannot be
+anything other than a div.
+
 #### Shared page container
 
 The shell owns one gutter and one content width, both in `:root` in `styles.css`:

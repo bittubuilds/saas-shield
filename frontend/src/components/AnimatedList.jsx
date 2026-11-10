@@ -33,6 +33,19 @@ export default function AnimatedList({ items, renderItem, getKey = (it, i) => i,
       : e.key === 'ArrowDown' ? Math.min(items.length - 1, a + 1) : Math.max(0, a < 0 ? 0 : a - 1)));
   };
 
+  // Rows animate from here, not from a hidden CSS state: with scripts off, or with
+  // motion turned down, the list is simply there and readable.
+  useEffect(() => {
+    if (!shown || !box.current) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    box.current.querySelectorAll('.alist-row').forEach((el, i) => {
+      el.animate(
+        [{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }],
+        { duration: 520, delay: i * stagger, easing: 'cubic-bezier(.16, 1, .3, 1)', fill: 'both' },
+      );
+    });
+  }, [shown, stagger]);
+
   return (
     <ul ref={box} className={`alist ${shown ? 'is-in' : ''} ${className}`.trim()} role="listbox" aria-label={label}
       aria-activedescendant={active >= 0 ? `alist-${active}` : undefined} tabIndex={0}
