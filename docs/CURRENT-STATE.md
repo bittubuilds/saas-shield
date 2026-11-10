@@ -201,8 +201,10 @@ invented at render time.
 
 ## Verified (2026-11-09, local server + built bundle)
 
-- `npm test`: 321 tests, 295 pass, 0 fail, 26 skipped.
-- `npm run build` (root, as Render runs it): succeeds; lazy `Aurora` chunk emitted.
+- `npm test`: 334 tests, 308 pass, 0 fail, 26 skipped.
+- `npm run build` (root, as Render runs it): succeeds. The dashboard no longer loads the
+  WebGL `Aurora` (its wash is a CSS ground), so no lazy chunk is emitted for it; the moment
+  runtime ships as static files under `app/moments/`.
 - Real scan end to end in a browser: signup → add site → add comparison →
   scan runs → report → history → competitors → settings → logout. Wikipedia
   vs its mobile mirror: 625 pages compared, 123 findings.
@@ -210,6 +212,20 @@ invented at render time.
   at 390 px; slide-out menu opens and closes.
 - `GET /reports/export.pdf` → 200 `application/pdf`. AI endpoints answer honestly
   (no report invented) when the provider is paused or unconfigured.
+
+## Verified on production after the dashboard rework (2026-11-10, 11:3x IST)
+
+`main` `f099a99..3c3f083` pushed and rebuilt by Render automatically; `/app` now serves
+`app/assets/index-CmdUliZm.js` + `index-CSqyJzQD.css`, the same hashes as the local build, and
+`app/moments/{moments.js,lib.js,word-highlight/*}` answer 200.
+
+- `/api/health` 200: Postgres, 42 tables, migration 14, writable; Google and GitHub OAuth both
+  report configured.
+- Signed out, `/app` lands on `/app/login` ("Welcome back.") with the theme applied and no
+  console errors beyond the expected 401 from the session probe.
+- The two bands that carry behaviour were verified locally against this same bundle before the
+  push: scan submit → `/scan/<id>`, list row → `/scan/<id>`, hold-to-remove, CTA focus, and the
+  word-highlight moment mounting (`data-moments-ready="1"`, 20 words wrapped).
 
 ## Verified on production (2026-11-09, 16:5x IST)
 
