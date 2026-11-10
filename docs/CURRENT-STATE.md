@@ -42,6 +42,18 @@ workspace, so without this a second URL was rejected and no scan could ever star
 The dashboard's "Example result" card is demo data (`MATCHES`) and is labelled as
 such; real numbers always come from the API.
 
+#### Shared page container
+
+The shell owns one gutter and one content width, both in `:root` in `styles.css`:
+
+- `--gutter` (24px desktop, 16px at 800px and below) is the only page margin; `.shell`
+  uses it and `.main` no longer adds its own 12px.
+- `--content` is 1240px; `.main`, `.footer` and every app page centre on it, so the
+  hero, the panels, the footer and the floating menu button share the same left and
+  right edge at 1440, 1024, 768 and 390 (measured: 100/1340, 24/1000, 16/752, 16/374).
+- `.sm-header` pads by `max(--gutter, (100vw - --content) / 2)` so the brand and the
+  menu button line up with that column instead of a fixed 32px.
+
 ### Dashboard: one working surface (redesigned 10 Nov 2026)
 
 `frontend/src/pages/Dashboard.jsx` plus `frontend/src/dashboard.css` (scoped `.db`).

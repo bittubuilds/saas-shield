@@ -3,6 +3,7 @@
   --border: rgba(255,255,255,.1); --text: #fff; --muted: #a9a7bd;
   --violet: #8b5cf6; --violet-d: #6d28d9; --violet-l: #a78bfa; --danger: #f87171; --ok: #34d399;
   --r-lg: 28px; --r-md: 18px; --r-sm: 12px;
+  --gutter: 24px; --content: 1240px;
   color-scheme: dark;
 }
 *, *::before, *::after { box-sizing: border-box; }
@@ -15,9 +16,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 :focus-visible { outline: 2px solid var(--violet-l); outline-offset: 3px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-.shell { min-height: 100vh; display: flex; flex-direction: column; padding: 24px; gap: 0;
+.shell { min-height: 100vh; display: flex; flex-direction: column; padding: var(--gutter); gap: 0;
   background: var(--bg); }
-.main { flex: 1; width: 100%; max-width: 1240px; margin: 0 auto; padding: 0 12px; }
+.main { flex: 1; width: 100%; max-width: var(--content); margin: 0 auto; padding: 0; }
 
 /* Nav */
 .nav { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 78px; padding: 0 36px 0 60px;
@@ -53,8 +54,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .btn:disabled { opacity: .7; cursor: progress; }
 
 /* Footer */
-.footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 24px; padding: 18px 36px;
-  border-top: 1px solid var(--border); color: var(--muted); font-size: 16px; }
+.footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;
+  width: 100%; max-width: var(--content); margin: 24px auto 0; padding: 18px 0;
+  border-top: 1px solid var(--border); color: var(--muted); font-size: 15px; }
 .footer-links { display: flex; gap: 22px; }
 .footer-links a:hover { color: var(--violet-l); }
 .brand { display: flex; align-items: center; gap: 12px; }
@@ -106,10 +108,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* Responsive */
 @media (max-width: 1100px) { .grid { grid-template-columns: repeat(2, 1fr); } .nav-links { gap: 28px; } }
 @media (max-width: 800px) {
-  .shell { padding: 12px; } .nav { padding: 0 16px; height: 68px; } .nav-links { display: none; }
+  .shell { --gutter: 16px; padding: var(--gutter); } .nav { padding: 0 16px; height: 68px; } .nav-links { display: none; }
   .hero { padding: 40px 0 28px; } .search { height: 60px; padding-left: 20px; } .search-btn { width: 64px; height: 58px; } .search input { font-size: 16px; }
   .grid { gap: 12px; } .panel { padding: 24px 16px; } .stages { grid-template-columns: repeat(2, 1fr); row-gap: 20px; }
-  .footer { padding: 16px; font-size: 14px; }
+  .footer { padding: 16px 0; font-size: 14px; }
 }
 @media (max-width: 520px) { .grid { grid-template-columns: 1fr; } .section-head .btn { height: 40px; padding: 0 16px; } .section-head h2 { font-size: 20px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
@@ -421,7 +423,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* Hero runs up under the fixed header so the aurora has no hard edge behind it */
 .below .hero { margin-top: -62px; padding-top: calc(62px + clamp(28px, 5vw, 56px)); }
 .sm-wrap { --pw: clamp(380px, 42vw, 560px); position: fixed; inset: 0; z-index: 60; pointer-events: none; }
-.sm-header { position: absolute; top: 0; left: 0; right: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; padding: 14px clamp(16px, 3vw, 32px); pointer-events: auto;
+.sm-header { position: absolute; top: 0; left: 0; right: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; pointer-events: auto;
+  padding: 14px max(var(--gutter), calc((100vw - var(--content)) / 2));
   transition: background .3s, backdrop-filter .3s; }
 .sm-wrap.is-scrolled .sm-header { background: rgba(7, 7, 13, .72); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
 .sm-logo { transition: color .3s; }
