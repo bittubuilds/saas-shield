@@ -189,14 +189,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* Remove-site affordance: sits beside the card, never inside the link. */
 .site-row { display: flex; align-items: stretch; gap: 10px; }
 .site-row .card.row { flex: 1; }
-.remove-btn {
-  align-self: center; padding: 8px 14px; border-radius: 10px; cursor: pointer;
-  background: transparent; border: 1px solid rgba(255, 90, 90, 0.35);
-  color: #ff8a8a; font-size: 13px; font-weight: 600; white-space: nowrap;
-}
-.remove-btn:hover:not(:disabled) { background: rgba(255, 90, 90, 0.12); border-color: #ff5a5a; }
-.remove-btn:disabled { opacity: 0.5; cursor: default; }
-
 /* Legal / settings documents: plain, readable, same dark theme. */
 .doc { max-width: 860px; margin: 0 auto; padding: 8px 4px 40px; }
 .doc-kicker { text-transform: uppercase; letter-spacing: .12em; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
@@ -362,25 +354,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* Unified hero: emblem, wordmark, tagline, scan bar and an example result */
 .hero .stage-logo { height: clamp(190px, 28vh, 270px); max-width: 420px; }
 .hero .stage-word { max-width: 900px; }
-.hero-tag { margin-top: 4px; font-size: clamp(20px, 2.6vw, 30px); font-weight: 700; letter-spacing: -.01em;
-  background: linear-gradient(110deg, #a9a7bd 35%, #fff 50%, #a9a7bd 65%); background-size: 220% 100%;
-  -webkit-background-clip: text; background-clip: text; color: transparent; animation: shine 3.5s linear infinite; }
-@keyframes shine { from { background-position: 120% 0; } to { background-position: -120% 0; } }
-.scan-demo { position: relative; overflow: hidden; width: 100%; max-width: 660px; margin-top: clamp(24px, 3vw, 34px); padding: 16px 18px; text-align: left;
-  border: 1px solid var(--border); border-radius: var(--r-md); background: rgba(15, 14, 28, .72); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
-.scan-demo::after { content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 35%; pointer-events: none;
-  background: linear-gradient(90deg, transparent, rgba(167, 139, 250, .22), transparent); transform: translateX(-120%); animation: beam 4.5s ease-in-out infinite; }
-@keyframes beam { 0% { transform: translateX(-120%); } 55%, 100% { transform: translateX(380%); } }
-.scan-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 12px; font-size: 13px; color: var(--muted); }
-.scan-head span:last-child { color: var(--violet-l); font-weight: 600; }
-.scan-demo li { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 44px; align-items: center; gap: 14px; padding: 10px 0; border-top: 1px solid var(--border); }
-.scan-demo li b { display: block; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.scan-demo li small { color: var(--muted); font-size: 13px; }
-.scan-demo li em { font-style: normal; font-weight: 700; text-align: right; }
-.meter { height: 6px; border-radius: 99px; background: rgba(255, 255, 255, .08); overflow: hidden; }
-.meter i { display: block; height: 100%; width: var(--w); border-radius: inherit; background: linear-gradient(90deg, var(--violet-d), #ff3d9a); animation: fill 1.4s cubic-bezier(.2, .8, .3, 1) both .6s; }
-@keyframes fill { from { width: 0; } }
-@media (prefers-reduced-motion: reduce) { .hero-tag, .scan-demo::after, .meter i { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .meter i { animation: none; } }
 @media (max-width: 520px) { .scan-demo li { grid-template-columns: minmax(0, 1fr) 70px 40px; gap: 10px; } }
 
 /* Wave fills the whole taller hero, down to the last row (no empty band at the bottom) */

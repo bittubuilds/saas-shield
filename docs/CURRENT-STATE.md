@@ -42,6 +42,34 @@ workspace, so without this a second URL was rejected and no scan could ever star
 The dashboard's "Example result" card is demo data (`MATCHES`) and is labelled as
 such; real numbers always come from the API.
 
+### Dashboard: one working surface (redesigned 10 Nov 2026)
+
+`frontend/src/pages/Dashboard.jsx` plus `frontend/src/dashboard.css` (scoped `.db`).
+The page is now a console rather than an effects showcase: a compact brand line and
+headline, the URL composer immediately under it, then two panels (your websites,
+an example report) and a four-step capability rail on hairlines.
+
+- **Kept for function:** `normalizeUrl`, the `kind: original/comparison` rule, the
+  hint that explains which one the URL will become, both `addWebsite` and
+  `removeWebsite` calls, hold-to-confirm removal, navigation to `/scan/:id`, the
+  `/history` link and the `#features` anchor the menu points at.
+- **Kept as identity:** the lazy WebGL `Aurora` wash (now masked behind the hero
+  only), `ClickSpark` on the submit button, `AnimatedList` for the sample rows.
+- **Retired:** `TechText`, `ElectricLogo`, `DotGrid`, `SplitText`, `ScrambledText`,
+  `BounceText`, `ScrollFloat`, `ScrollReveal`, `SpotlightCard` and the four glass
+  feature cards. Every one of those components is still in the tree; only the
+  dashboard stopped using them.
+- **Copy:** the sample report is still labelled sample data, and the capability
+  rail describes what the scanner actually does (crawl, similarity, screenshots,
+  export). No numbers are invented.
+- **Contrast:** action button 7.1:1, body copy 8.3:1, dim labels 5.9:1, input
+  placeholder 4.8:1.
+- **Dead CSS removed** with it: the old `.hero`, `.search*`, `.scan-report`, `.sr-*`,
+  `.site-row`, `.remove-btn`, `.hero-tag`, `.scan-demo` and their keyframes, all of
+  which had no element on any page. Shared classes (`.card`, `.insights`, `.grid`,
+  `.page-narrow`, `.sub-h`, `.hold-btn`, `.alist*`) were left alone, and every other
+  screen was re-rendered afterwards to confirm it.
+
 ### Sign-in page: split layout (React Bits Pro "Auth 2", rebuilt on our tokens)
 
 `frontend/src/pages/Login.jsx` is a two-pane split: form left, brand panel right.

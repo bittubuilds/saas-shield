@@ -1,0 +1,191 @@
+/* ==========================================================================
+   Dashboard — the working surface
+   Scoped under .db so nothing leaks into the rest of the app. The page is one
+   console: a composer to start a scan, your websites, a sample report, and a
+   quiet capability rail. Hairlines instead of cards, violet only where a hand
+   can act.
+   ========================================================================== */
+
+.db {
+  --db-ink: #f4f3f8;
+  --db-body: #aeabc0;
+  --db-dim: #8b88a0;
+  --db-line: rgba(255, 255, 255, .14);
+  --db-line-soft: rgba(255, 255, 255, .07);
+  --db-field: rgba(255, 255, 255, .045);
+  --db-violet: #8b5cf6;
+  --db-action: #6d28d9;
+  --db-action-hover: #5b21b6;
+  --db-serif: 'Instrument Serif', 'Iowan Old Style', Georgia, serif;
+  position: relative;
+  isolation: isolate;
+  padding-bottom: clamp(40px, 6vw, 80px);
+  color: var(--db-ink);
+}
+
+/* ---- hero band ---- */
+.db-hero { position: relative; padding: clamp(24px, 4.4vw, 56px) 0 clamp(20px, 3vw, 32px); }
+.db-glow {
+  position: absolute; inset: -70px -6% auto -6%; height: 420px; z-index: -1;
+  opacity: .55; pointer-events: none;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 100%);
+}
+
+.db-lock { display: flex; align-items: center; gap: 10px; }
+.db-lock img { display: block; width: 26px; height: 30px; }
+.db-lock span { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+.db-lock em {
+  font-style: normal; font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--db-dim); padding-left: 12px; border-left: 1px solid var(--db-line);
+}
+
+.db-h1 {
+  margin: clamp(22px, 3.2vw, 36px) 0 0; max-width: 18ch;
+  font-size: clamp(34px, 5.2vw, 62px); line-height: .98;
+  font-weight: 800; letter-spacing: -.042em; text-wrap: balance;
+}
+.db-h1 em {
+  font-family: var(--db-serif); font-style: italic; font-weight: 400;
+  letter-spacing: -.018em; color: inherit;
+}
+.db-sub {
+  margin-top: clamp(14px, 1.8vw, 20px); max-width: 54ch;
+  font-size: clamp(15px, 1.5vw, 17px); line-height: 1.6; color: var(--db-body);
+}
+
+/* ---- composer ---- */
+.db-compose {
+  display: flex; align-items: center; gap: 6px; margin-top: clamp(22px, 3vw, 34px);
+  padding: 7px; max-width: 720px;
+  border: 1px solid var(--db-line); border-radius: 14px; background: var(--db-field);
+  transition: border-color .2s ease, box-shadow .2s ease, background .2s ease;
+}
+.db-compose:hover { border-color: rgba(255, 255, 255, .2); }
+.db-compose:focus-within {
+  border-color: var(--db-violet); background: rgba(255, 255, 255, .06);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, .18);
+}
+.db-compose-icon { display: grid; place-items: center; width: 42px; height: 52px; color: var(--db-dim); flex: none; }
+.db-input {
+  flex: 1; min-width: 0; height: 52px; padding: 0 4px; border: 0; background: transparent;
+  color: var(--db-ink); font: inherit; font-size: 16px; caret-color: var(--db-violet);
+}
+.db-input::placeholder { color: #8f8ca4; }
+.db-input:focus { outline: none; }
+.db-input:disabled { opacity: .7; }
+.db-btn {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  height: 52px; padding: 0 20px; border: 0; border-radius: 10px;
+  background: var(--db-action); color: #fff; font-size: 15px; font-weight: 650; letter-spacing: -.01em;
+  transition: background .18s ease, transform .12s ease;
+}
+.db-btn:hover { background: var(--db-action-hover); }
+.db-btn:active { transform: translateY(1px); }
+.db-btn:disabled { opacity: .65; cursor: progress; }
+
+.db-hint { margin-top: 12px; font-size: 13px; color: var(--db-dim); }
+.db-error {
+  display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; padding: 11px 13px;
+  max-width: 720px; border: 1px solid rgba(248, 113, 113, .3); border-radius: 10px;
+  background: rgba(248, 113, 113, .08); color: #fecaca; font-size: 14px; line-height: 1.45;
+}
+
+/* ---- working area ---- */
+.db-work {
+  display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: clamp(20px, 2.6vw, 34px); margin-top: clamp(34px, 5vw, 62px); align-items: start;
+}
+.db-panel { min-width: 0; }
+.db-panel-h {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 14px;
+  padding-bottom: 12px; border-bottom: 1px solid var(--db-line);
+}
+.db-panel-h h2 { font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
+.db-panel-h a { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--db-dim); transition: color .18s ease; }
+.db-panel-h a:hover { color: var(--db-ink); }
+.db-count { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--db-dim); }
+
+/* websites */
+.db-sites { margin: 0; padding: 0; list-style: none; }
+.db-site {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px;
+  padding: 14px 0; border-bottom: 1px solid var(--db-line-soft);
+}
+.db-site-link { display: block; min-width: 0; }
+.db-site-link b {
+  display: block; font-size: 15px; font-weight: 600; letter-spacing: -.01em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: color .18s ease;
+}
+.db-site-link:hover b { color: #d9c8ff; }
+.db-site-link small { display: block; margin-top: 4px; font-size: 12.5px; color: var(--db-dim); }
+.db-kind { color: var(--db-body); }
+.db-kind.is-own { color: #c4b5fd; }
+.db-remove { font-size: 12px; color: var(--db-dim); }
+.db-quiet { padding: 18px 0; color: var(--db-dim); font-size: 14px; }
+.db-empty { padding: 20px 0; color: var(--db-body); font-size: 14px; line-height: 1.55; max-width: 42ch; }
+
+/* sample report */
+.db-ex-list { margin-top: 4px; }
+
+/* The shared AnimatedList supplies the row grid and the glide; these rules give
+   the sample rows the shape of a finding: site, share, what matched, and a bar. */
+.db-ex .alist-row {
+  grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'site pct' 'part part' 'bar bar';
+  row-gap: 6px; padding: 13px 14px 15px; column-gap: 12px;
+  border-bottom: 1px solid var(--db-line-soft);
+}
+.db-ex-site { grid-area: site; font-size: 14.5px; font-weight: 600; letter-spacing: -.01em; }
+.db-ex-pct { grid-area: pct; font-style: normal; font-size: 14px; font-variant-numeric: tabular-nums; color: var(--db-ink); }
+.db-ex-part { grid-area: part; font-size: 12.5px; color: var(--db-dim); }
+.db-ex-bar { grid-area: bar; display: block; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, .09); overflow: hidden; }
+.db-ex-bar i {
+  display: block; width: var(--w); height: 100%; border-radius: 2px;
+  background: linear-gradient(90deg, #7c3aed, #a78bfa);
+  transform: scaleX(0); transform-origin: 0 50%;
+  transition: transform .7s cubic-bezier(.16, 1, .3, 1);
+  transition-delay: calc(var(--i, 0) * 90ms + 250ms);
+}
+.db-ex .alist.is-in .db-ex-bar i { transform: none; }
+.db-ex-note { margin-top: 14px; font-size: 12px; line-height: 1.55; color: var(--db-dim); }
+
+/* The shared hold-to-confirm button ships a red halo while it is held; on this
+   page depth carries an offset instead of a glow. */
+.db .hold-btn.is-holding { box-shadow: 0 6px 18px rgba(0, 0, 0, .5); }
+
+/* ---- capability rail ---- */
+.db-caps { margin-top: clamp(44px, 6vw, 84px); }
+.db-caps-h { padding-bottom: 12px; border-bottom: 1px solid var(--db-line); }
+.db-caps-h h2 { font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
+.db-caps-grid {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px;
+  background: var(--db-line-soft);
+}
+.db-cap { background: #07070d; padding: 20px 18px 24px; }
+.db-cap b {
+  display: block; font-family: var(--db-serif); font-size: 19px; font-weight: 400;
+  color: #cfc9e4; letter-spacing: .02em;
+}
+.db-cap h3 { margin-top: 10px; font-size: 20px; font-weight: 700; letter-spacing: -.025em; }
+.db-cap p { margin-top: 7px; font-size: 14px; line-height: 1.55; color: var(--db-body); }
+
+/* ---- responsive ---- */
+@media (max-width: 980px) {
+  .db-work { grid-template-columns: minmax(0, 1fr); }
+  .db-caps-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+  .db-compose { flex-wrap: wrap; padding-bottom: 8px; }
+  .db-input { height: 48px; }
+  .db-btn { width: 100%; height: 48px; }
+  .db-caps-grid { grid-template-columns: minmax(0, 1fr); }
+  .db-glow { height: 300px; opacity: .45; }
+  .db-site { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .db-remove { justify-self: start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-compose, .db-btn, .db-ex-bar i, .db-site-link b, .db-panel-h a { transition: none; }
+  .db-ex-bar i { transform: none; }
+}

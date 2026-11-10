@@ -1,34 +1,29 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
-import GlassIcon from '../components/GlassIcon.jsx';
-import ScrambledText from '../components/ScrambledText.jsx';
-import SplitText from '../components/SplitText.jsx';
-import FadeContent from '../components/FadeContent.jsx';
 import AnimatedList from '../components/AnimatedList.jsx';
-import TechText from '../components/TechText.jsx';
-import ElectricLogo from '../components/ElectricLogo.jsx';
-import { ClickSpark, DotGrid, Magnet, ScrollFloat, ScrollReveal, SpotlightCard } from '../components/bits.jsx';
-import BounceText from '../components/BounceText.jsx';
 import HoldButton from '../components/HoldButton.jsx';
-import { Empty, Loading } from '../components/Status.jsx';
+import { ClickSpark } from '../components/bits.jsx';
+import { Loading } from '../components/Status.jsx';
 import { addWebsite, listWebsites, removeWebsite } from '../services/api.js';
+import '../dashboard.css';
 
-// Heavy WebGL background: loaded after first paint; .aurora's CSS gradient shows meanwhile.
+// Heavy WebGL wash: loaded after first paint, and only behind the hero band.
 const Aurora = lazy(() => import('../components/Aurora.jsx'));
 const AURORA_STOPS = ['#3b1a8a', '#6d28d9', '#1d4ed8'];
 
-const FEATURES = [
-  { icon: 'bolt', tone: 'indigo', title: 'Smart Scanning', text: 'Automatically scan your website for competitor content.' },
-  { icon: 'chart', tone: 'violet', title: 'Competitor Insights', text: 'Discover who’s copying you and how they do it.' },
-  { icon: 'image', tone: 'purple', title: 'Screenshots', text: 'Capture proof with real screenshots.' },
-  { icon: 'doc', tone: 'blue', title: 'Detailed Reports', text: 'Get comprehensive reports with actionable insights.' },
-];
-
+// Illustrative only, and labelled as such on the page. Real numbers come from a scan.
 const MATCHES = [
   { site: 'clone-saas.io', part: 'Pricing page copy', pct: 94 },
   { site: 'rival-app.com', part: 'Feature section', pct: 81 },
   { site: 'copycat.dev', part: 'Hero headline', pct: 67 },
+];
+
+const CAPS = [
+  { n: '01', title: 'Scan a site', text: 'Point it at a URL. It crawls the pages you can reach and reads the text.' },
+  { n: '02', title: 'See the overlap', text: 'Passages are compared against your pages and scored by how much matches.' },
+  { n: '03', title: 'Check the evidence', text: 'Each match opens beside the original, with the screenshot of where it was found.' },
+  { n: '04', title: 'Keep the report', text: 'Matches, pages and evidence stay together in a report you can export.' },
 ];
 
 const PRIVATE = /^(localhost|127\.|0\.0\.0\.0|10\.|192\.168\.|169\.254\.|\[::1\]|::1)/i;
@@ -94,96 +89,118 @@ export default function Dashboard() {
     }
   }
 
+  const hasOriginal = Array.isArray(sites) && sites.some((s) => s.kind === 'original');
+
   return (
     <>
-      <ClickSpark scope=".search-btn" count={6} />
-      <div className="below">
-      <DotGrid />
-      <section className="hero" id="features">
-        <Suspense fallback={<div className="aurora" aria-hidden="true" />}><Aurora colorStops={AURORA_STOPS} amplitude={0.9} blend={0.7} speed={0.5} /></Suspense>
-        <div className="stage-logo">
-          <ElectricLogo src={`${import.meta.env.BASE_URL}logo.png`} label="SaaS Shield logo" color="#ecc7ff" glowColor="#ad6dff"
-            scale={0.7} strands={4} bend={0.6} crackle={1.5} arcs={1} speed={2.5} interactive intensity={1} glow={1}
-            thickness={1.5} flicker={0.6} fill={0} cursorIntensity={0.75} cursorRadius={100} />
-        </div>
-        <TechText maxSize={140} />
-        <SplitText className="hero-tag" text="Catch copycats. Keep the proof." />
-        <ScrambledText className="lead" text="Detect copied content, analyze competitors and get detailed insights about your SaaS product." />
-        <form className="search" onSubmit={onSubmit} noValidate>
-          <Icon name="link" size={24} className="search-icon" />
-          <label htmlFor="url" className="sr-only">Website URL</label>
-          <input id="url" type="text" inputMode="url" autoComplete="url" placeholder="Enter website URL..."
-            value={value} onChange={(e) => setValue(e.target.value)} aria-invalid={!!error}
-            aria-describedby={error ? 'url-error' : undefined} disabled={busy} />
-          <Magnet strength={0.25} range={60}>
-            <button className="search-btn" type="submit" aria-label="Start scan" disabled={busy}>
-              {busy ? <span className="spinner" /> : <Icon name="search" size={26} />}
+      <ClickSpark scope=".db-btn" count={6} />
+      <div className="db">
+        <section className="db-hero">
+          <div className="db-glow" aria-hidden="true">
+            <Suspense fallback={null}>
+              <Aurora colorStops={AURORA_STOPS} amplitude={0.7} blend={0.6} speed={0.4} />
+            </Suspense>
+          </div>
+
+          <p className="db-lock">
+            <img src={`${import.meta.env.BASE_URL}logo.png`} alt="" width="26" height="30" />
+            <span>SaaS Shield</span>
+            <em>Content copying detector</em>
+          </p>
+
+          <h1 className="db-h1">Catch <em>copycats.</em><br />Keep the proof.</h1>
+          <p className="db-sub">
+            Scan a site, compare its pages against yours, and keep the matching passages in one report.
+          </p>
+
+          <form className="db-compose" onSubmit={onSubmit} noValidate>
+            <span className="db-compose-icon" aria-hidden="true"><Icon name="link" size={20} /></span>
+            <label htmlFor="url" className="sr-only">Website URL</label>
+            <input id="url" className="db-input" type="text" inputMode="url" autoComplete="url"
+              placeholder="example.com or https://…" value={value} onChange={(e) => setValue(e.target.value)}
+              aria-invalid={!!error} aria-describedby={error ? 'url-error' : undefined} disabled={busy} />
+            <button className="db-btn" type="submit" disabled={busy}>
+              {busy ? <><span className="spinner" aria-hidden="true" /> Scanning…</> : <>Start scan <Icon name="arrow" size={16} /></>}
             </button>
-          </Magnet>
-        </form>
-        {error && <p id="url-error" className="field-error" role="alert">{error}</p>}
-        <p className="search-hint">
-          {(Array.isArray(sites) && sites.some((s) => s.kind === 'original'))
-            ? 'This URL will be compared against your website.'
-            : 'Start with your own website, then add a site to check against it.'}
-        </p>
-        <div className="scan-report" role="group" aria-label="Example scan result">
-          <div className="sr-head"><span>Example result</span><span>{MATCHES.length} matches found</span></div>
-          <AnimatedList items={MATCHES} getKey={(m) => m.site} label="Example matches" renderItem={(m) => (
-            <>
-              <b className="sr-site">{m.site}</b>
-              <em className="sr-pct">{m.pct}%</em>
-              <small className="sr-part">{m.part}</small>
-              <span className="sr-bar" role="presentation"><i style={{ '--w': `${m.pct}%` }} /></span>
-            </>
-          )} />
-        </div>
-      </section>
+          </form>
 
-      <FadeContent as="section" className="page-narrow" aria-labelledby="sites-h">
-        <div className="section-head">
-          <h2 id="sites-h" className="sub-h"><ScrollFloat text="Your websites" /></h2>
-        </div>
-        {sitesError ? <p className="field-error" role="alert">{sitesError}</p>
-          : !sites ? <Loading label="Loading websites…" />
-          : sites.length === 0 ? <Empty>No websites yet. Add one above to start the first check.</Empty>
-          : (
-            <ul className="insights">
-              {sites.map((s) => (
-                <li key={s.id} className="site-row">
-                  <Link className="card row" to={`/scan/${s.id}`}>
-                    <h3>{s.url || s.domain}</h3>
-                    <span>{s.kind === 'original' ? 'Your site' : 'Comparison'} · {s.status}</span>
-                  </Link>
-                  <HoldButton
-                    className="remove-btn"
-                    onConfirm={() => onRemove(s)}
-                    busy={removing === s.id}
-                    ariaLabel={`Hold to remove ${s.url || s.domain}`}
-                  >
-                    {removing === s.id ? 'Removing…' : 'Hold to remove'}
-                  </HoldButton>
-                </li>
-              ))}
-            </ul>
-          )}
-      </FadeContent>
+          {error
+            ? <p id="url-error" className="db-error" role="alert">{error}</p>
+            : (
+              <p className="db-hint">
+                {hasOriginal
+                  ? 'This URL will be compared against your website.'
+                  : 'Start with your own website, then add a site to check against it.'}
+              </p>
+            )}
+        </section>
 
+        <div className="db-work">
+          <section className="db-panel" aria-labelledby="sites-h">
+            <div className="db-panel-h">
+              <h2 id="sites-h">Your websites</h2>
+              <Link to="/history">All reports <Icon name="arrow" size={14} /></Link>
+            </div>
+            {sitesError ? <p className="db-error" role="alert">{sitesError}</p>
+              : !sites ? <p className="db-quiet"><Loading label="Loading websites…" /></p>
+              : sites.length === 0 ? (
+                <p className="db-empty">No websites yet. Add one above to start the first check.</p>
+              ) : (
+                <ul className="db-sites">
+                  {sites.map((s) => (
+                    <li key={s.id} className="db-site">
+                      <Link className="db-site-link" to={`/scan/${s.id}`}>
+                        <b>{s.url || s.domain}</b>
+                        <small>
+                          <span className={`db-kind ${s.kind === 'original' ? 'is-own' : ''}`}>
+                            {s.kind === 'original' ? 'Your site' : 'Comparison'}
+                          </span>
+                          {' · '}{s.status}
+                        </small>
+                      </Link>
+                      <HoldButton
+                        className="db-remove"
+                        onConfirm={() => onRemove(s)}
+                        busy={removing === s.id}
+                        ariaLabel={`Hold to remove ${s.url || s.domain}`}
+                      >
+                        {removing === s.id ? 'Removing…' : 'Hold to remove'}
+                      </HoldButton>
+                    </li>
+                  ))}
+                </ul>
+              )}
+          </section>
 
-      <FadeContent as="section" className="features" aria-labelledby="feat-h">
-        <div className="section-head">
-          <h2 id="feat-h"><ScrollFloat text="Powerful Features" /></h2>
-          <Link className="btn btn-outline" to="/history"><ScrollReveal text="All reports" /> <Icon name="arrow" size={16} /></Link>
+          <aside className="db-panel db-ex" aria-labelledby="ex-h">
+            <div className="db-panel-h">
+              <h2 id="ex-h">Example result</h2>
+              <span className="db-count">{MATCHES.length} matches</span>
+            </div>
+            <AnimatedList className="db-ex-list" items={MATCHES} getKey={(m) => m.site} label="Example matches" renderItem={(m, i) => (
+              <>
+                <b className="db-ex-site">{m.site}</b>
+                <em className="db-ex-pct">{m.pct}%</em>
+                <small className="db-ex-part">{m.part}</small>
+                <span className="db-ex-bar" role="presentation" style={{ '--i': i }}><i style={{ '--w': `${m.pct}%` }} /></span>
+              </>
+            )} />
+            <p className="db-ex-note">Sample data, shown to explain the shape of a report. Your numbers come from a real scan.</p>
+          </aside>
         </div>
-        <div className="grid">
-          {FEATURES.map((f) => (
-            <SpotlightCard key={f.title}>
-              <GlassIcon icon={f.icon} tone={f.tone} />
-              <h3><BounceText text={f.title} /></h3><ScrambledText text={f.text} />
-            </SpotlightCard>
-          ))}
-        </div>
-      </FadeContent>
+
+        <section className="db-caps" id="features" aria-labelledby="caps-h">
+          <div className="db-caps-h"><h2 id="caps-h">What it does</h2></div>
+          <div className="db-caps-grid">
+            {CAPS.map((c) => (
+              <article key={c.n} className="db-cap">
+                <b>{c.n}</b>
+                <h3>{c.title}</h3>
+                <p>{c.text}</p>
+              </article>
+            ))}
+          </div>
+        </section>
       </div>
     </>
   );
