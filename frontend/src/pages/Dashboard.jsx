@@ -113,16 +113,18 @@ export default function Dashboard() {
             Scan a site, compare its pages against yours, and keep the matching passages in one report.
           </p>
 
-          <form className="db-compose" onSubmit={onSubmit} noValidate>
+          <div className="db-field">
+            <label className="db-label" htmlFor="url">Website to scan</label>
+            <form className="db-compose" onSubmit={onSubmit} noValidate>
             <span className="db-compose-icon" aria-hidden="true"><Icon name="link" size={20} /></span>
-            <label htmlFor="url" className="sr-only">Website URL</label>
             <input id="url" className="db-input" type="text" inputMode="url" autoComplete="url"
               placeholder="example.com or https://…" value={value} onChange={(e) => setValue(e.target.value)}
               aria-invalid={!!error} aria-describedby={error ? 'url-error' : undefined} disabled={busy} />
             <button className="db-btn" type="submit" disabled={busy}>
               {busy ? <><span className="spinner" aria-hidden="true" /> Scanning…</> : <>Start scan <Icon name="arrow" size={16} /></>}
             </button>
-          </form>
+            </form>
+          </div>
 
           {error
             ? <p id="url-error" className="db-error" role="alert">{error}</p>
