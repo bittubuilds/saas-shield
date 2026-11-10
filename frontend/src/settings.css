@@ -1,0 +1,201 @@
+/* ==========================================================================
+   Settings — the account surface, in the dashboard's grammar.
+   Two bands of one screen. One .wrap each, on the shared container. Hairline
+   rows instead of cards, violet only where a hand can act, red only for the
+   action that cannot be undone. Values mirror the dashboard tokens so this
+   page reads the same even when it is the first screen someone opens.
+   ========================================================================== */
+
+.st {
+  --st-ink: #f4f3f8;
+  --st-body: #aeabc0;
+  --st-dim: #8b88a0;
+  --st-line: rgba(255, 255, 255, .14);
+  --st-line-soft: rgba(255, 255, 255, .07);
+  --st-field: rgba(255, 255, 255, .045);
+  --st-action: #6d28d9;
+  --st-action-hover: #5b21b6;
+  --st-danger: #b91c1c;
+  --st-danger-hover: #991b1b;
+  --st-gap: 24px;
+  color: var(--st-ink);
+}
+
+.main:has(> .st-hero) { padding-top: 0; }
+.st-hero, .st-band { position: relative; isolation: isolate; }
+.st-hero > .wrap, .st-band > .wrap { position: relative; z-index: 1; }
+
+/* ---- band 1: the account, exactly one screen ---- */
+.st-hero {
+  display: flex; flex-direction: column; justify-content: center;
+  min-height: 100svh;
+  padding-block: clamp(84px, 10vh, 112px) clamp(48px, 7vh, 80px);
+  background:
+    radial-gradient(52% 44% at 20% 6%, rgba(109, 40, 217, .26), transparent 72%),
+    radial-gradient(44% 38% at 84% 2%, rgba(29, 78, 216, .2), transparent 74%);
+}
+
+/* ---- band 2: the one irreversible action ---- */
+.st-band {
+  display: flex; flex-direction: column; justify-content: center;
+  min-height: 100svh;
+  padding-block: clamp(56px, 8vh, 88px);
+  border-top: 1px solid var(--st-line-soft);
+}
+
+.st-kicker {
+  margin: 0 0 14px; font-size: 12px; font-weight: 600;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--st-dim);
+}
+.st-h1 {
+  margin: 0; font-size: clamp(38px, 4.6vw, 56px); font-weight: 700;
+  line-height: 1.02; letter-spacing: -.03em;
+}
+.st-h2 {
+  margin: 0; font-size: clamp(26px, 2.7vw, 34px); font-weight: 700;
+  line-height: 1.1; letter-spacing: -.02em;
+}
+.st-sub, .st-lead {
+  margin: 18px 0 0; max-width: 52ch;
+  font-size: 16.5px; line-height: 1.6; color: var(--st-body);
+}
+.st-lead { margin-top: 14px; max-width: 54ch; }
+
+
+.st-hero-wrap { width: 100%; }
+.st-hero-grid {
+  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--st-gap); row-gap: 40px; align-items: start;
+}
+.st-hero-text { grid-column: 1 / span 6; min-width: 0; }
+.st-hero-side { grid-column: 7 / span 6; min-width: 0; }
+
+/* the two figures this account actually holds, rolled once by the kit's moment */
+/* the figures sit as a status row under both columns, on the page-wide hairline */
+.st-facts-band {
+  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--st-gap); row-gap: 14px; align-items: end;
+  margin-top: clamp(30px, 4.4vh, 46px); padding-top: 22px;
+  border-top: 1px solid var(--st-line-soft);
+}
+.st-facts {
+  grid-column: 1 / span 6; min-width: 0;
+  display: flex; flex-wrap: wrap; gap: clamp(26px, 4vw, 56px); margin: 0;
+}
+.st-fact { display: flex; flex-direction: column-reverse; gap: 6px; }
+.st-fact-h {
+  margin: 0; font-size: 12.5px; font-weight: 600;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--st-dim);
+}
+.st-figure {
+  margin: 0; font-size: clamp(24px, 2.4vw, 32px); font-weight: 700;
+  line-height: 1; letter-spacing: -.03em; font-variant-numeric: tabular-nums;
+}
+
+.st-map { display: block; width: 100%; max-width: 440px; height: auto; margin: 0 0 clamp(16px, 2.2vh, 24px); }
+
+.st-inline {
+  color: #cbc6e2; text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, .28); text-underline-offset: 3px;
+}
+.st-note-quiet { margin-top: clamp(16px, 2.4vh, 22px); max-width: 40ch; }
+.st-facts-note { grid-column: 7 / span 6; min-width: 0; margin: 0 0 4px; max-width: 38ch; font-size: 13px; line-height: 1.5; color: var(--st-dim); }
+
+/* one split for the whole page, so every right column starts on the same line */
+.st-split {
+  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--st-gap); row-gap: 34px; align-items: start;
+  margin-top: clamp(32px, 5vh, 52px);
+}
+.st-col { grid-column: 1 / span 6; min-width: 0; }
+.st-split-r { grid-column: 7 / span 6; }
+
+.st-col-h {
+  margin: 0 0 10px; font-size: 12.5px; font-weight: 600;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--st-dim);
+}
+
+.st-rows { margin: 0; padding: 0; }
+.st-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 18px;
+  padding-block: 15px; border-bottom: 1px solid var(--st-line-soft);
+}
+.st-row:first-child { border-top: 1px solid var(--st-line-soft); }
+.st-row dt { font-size: 13.5px; color: var(--st-dim); }
+.st-row dd {
+  margin: 0; font-size: 14.5px; font-weight: 600; color: var(--st-ink);
+  text-align: right; overflow-wrap: anywhere;
+}
+
+.st-note {
+  margin: 16px 0 0; max-width: 46ch;
+  font-size: 14px; line-height: 1.6; color: var(--st-body);
+}
+.st-fine { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--st-dim); }
+
+.st-actions { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; margin-top: 20px; }
+
+.st-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 48px; padding: 0 22px; border: 0; border-radius: 10px;
+  background: var(--st-action); color: #fff;
+  font: inherit; font-size: 14.5px; font-weight: 600; cursor: pointer;
+  transition: background .18s ease, transform .1s ease;
+}
+.st-btn:hover { background: var(--st-action-hover); }
+.st-btn:active { transform: translateY(1px); }
+.st-btn-danger { background: var(--st-danger); }
+.st-btn-danger:hover { background: var(--st-danger-hover); }
+
+.st-link {
+  display: inline-flex; align-items: center; min-height: 44px;
+  font-size: 14px; color: #cbc6e2; text-decoration: none;
+  border-bottom: 1px solid var(--st-line); padding-bottom: 2px;
+  transition: color .18s ease, border-color .18s ease;
+}
+.st-link:hover { color: #fff; border-color: #c4b5fd; }
+
+.st-list { margin: 0; padding: 0; list-style: none; }
+.st-list li {
+  display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 12px;
+  padding-block: 14px; border-bottom: 1px solid var(--st-line-soft);
+  font-size: 14.5px; line-height: 1.5; color: #d9d6e6;
+}
+.st-list li:first-child { border-top: 1px solid var(--st-line-soft); }
+.st-list span {
+  font-size: 12px; font-variant-numeric: tabular-nums;
+  letter-spacing: .06em; color: var(--st-dim); padding-top: 2px;
+}
+
+.st-form { display: grid; gap: 10px; justify-items: stretch; margin: 0; }
+.st-label { font-size: 13px; color: var(--st-body); }
+.st-input {
+  width: 100%; min-height: 52px; padding: 0 16px; border-radius: 10px;
+  border: 1px solid var(--st-line); background: var(--st-field);
+  color: var(--st-ink); font: inherit; font-size: 15px;
+}
+.st-input:focus-visible { outline: 2px solid #c4b5fd; outline-offset: 2px; }
+.st-form .st-btn { margin-top: 4px; justify-self: start; }
+
+.st-err { margin: 12px 0 0; font-size: 13.5px; color: #ffb3b3; }
+.st-ok { margin: 0; font-size: 15px; line-height: 1.5; color: #d9d6e6; }
+
+@media (max-width: 980px) {
+  .st-col, .st-split-r, .st-hero-text, .st-hero-side { grid-column: 1 / -1; }
+  .st-split { row-gap: 32px; }
+  .st-hero-grid { row-gap: 34px; }
+}
+
+@media (max-width: 620px) {
+  .st-hero { padding-block: 92px 56px; }
+  .st-band { padding-block: 56px; }
+  .st-h1 { font-size: 34px; }
+  .st-sub, .st-lead { font-size: 15.5px; }
+  .st-split { margin-top: 28px; row-gap: 28px; }
+  .st-row { padding-block: 13px; }
+  .st-form .st-btn, .st-actions .st-btn { width: 100%; }
+  .st-facts { gap: 26px; grid-column: 1 / -1; }
+  .st-facts-band { padding-top: 18px; }
+  .st-facts-note { grid-column: 1 / -1; }
+  .st-map { max-width: 100%; }
+}

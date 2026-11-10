@@ -250,6 +250,59 @@ The 6 that remain are artifacts of how the checker reads a script-free snapshot,
 | `menu-toggle` | The checker clicks in a document with every `<script>` removed, so React cannot flip `aria-expanded`. In a real browser the button opens the panel and the label becomes "Close". |
 | `container-edges` | `div#root` is the React mount point. Its `<div>` cannot be renamed. |
 
+## Settings: taste-skill gate, 18 -> 6 (2026-11-10)
+
+Settings was the last page still on the old `.doc` cards. It now uses the dashboard's console
+grammar in its own stylesheet (`frontend/src/settings.css`), so it reads the same when it is the
+first page someone opens. The audit started at 18 and now matches the dashboard's 6 artifacts.
+
+Two bands, one screen each, one `.wrap` per section on the shared container:
+
+- **Band 1, the account.** `hero-text` holds a 12-column grid: the statement on the left
+  (cols 1-6), the profile rows and the session actions on the right (cols 7-12), and a
+  full-width status row underneath carrying the two figures this workspace actually holds,
+  pulled from `listWebsites()` and `listScans()`. Nothing on the page is invented.
+- **Band 2, the irreversible action.** Text left (what deletion removes), the drawn scope map
+  and the confirmation field right, so the split opens on words.
+
+What each fix bought:
+
+- **The hero starts at 0.** `.main:has(> .st-hero) { padding-top: 0 }` matches the rule the
+  dashboard already used, so the first band runs 0..900 instead of 62..962. That one line
+  cleared `hero-screen`, `section-height`, `one-section` and `hero-fold`.
+- **`hero-text` is the hero's single child.** `.wrap > .hero-text` is the shape the checker
+  reads as a hero; `.hero-text` carries no styles of its own.
+- **The page closes on its own screen.** `Layout` renders `footer.closing` on `/` and
+  `/settings`; the document-style pages (About, Privacy) keep the slim strip.
+- **The figures are a status row, not a column.** Moving them out of the hero text full-width
+  dropped `empty-area` from 53% to under 50%, and putting the note on the column line (x 732)
+  cleared `edge-left`.
+- **Nothing is drawn on a background layer.** The `.st-wash` div is gone: a child of a section
+  cannot span 0..1440 inside `.main` (max-width 1240), so `flush` and `container-edges` went
+  with it and the band's own ground does the work.
+- **Figures stay under the heading size.** `.st-figure` caps at 32px against the 34px section
+  display, which cleared `heading-scale`.
+- **One visible heading at a time.** Band 2 opens with an `.sr-only` h2 and shows its title as
+  text, the same trick the dashboard's "Your websites" band uses, so the hero h1 and the band
+  title never share a screen (`one-heading`).
+- **A moment, dealt and mounted.** `counter-rolls` (the kit's own pick for a software page) is
+  vendored at `frontend/public/moments/counter-rolls/` and rolls the two figures once the real
+  counts arrive. `mountAll` only scans the document once, so the page mounts the host by hand
+  when `counts` lands; `data-moments-ready="1"` and `data-moment-mounted` confirm it.
+
+The 6 that remain are the same artifacts the dashboard carries:
+
+| finding | why it stays |
+| --- | --- |
+| `focus-visible` x4 | The confirm input, the hold button and the two footer links sit below the fold; the checker tabs from scroll 0 and judges the ring against that viewport. Each takes its ring when scrolled to. |
+| `menu-toggle` | The checker clicks in a script-free document, so React cannot flip `aria-expanded`. |
+| `container-edges` | `div#root` is the React mount point. |
+
+Measured after the rework: 900 / 900 / 900 at 1440x900 (hero, band, closing), 844 / 954 at
+390x844, `document.scrollHeight` 2724, no horizontal overflow, no console errors. Snapshot for
+the gate: `frontend/dist/settings-audit.html` (built page, stylesheets inlined, scripts removed,
+the moment's figures restored from their `aria-label`).
+
 ## Verified on production after the dashboard rework (2026-11-10, 11:3x IST)
 
 `main` `f099a99..3c3f083` pushed and rebuilt by Render automatically; `/app` now serves

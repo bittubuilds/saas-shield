@@ -23,7 +23,9 @@ const MENU = [
 export default function Layout({ session, workspace, onSignOut }) {
   const email = session && session.user ? session.user.email : '';
   // The dashboard closes on its own screen; every other route keeps the slim legal strip.
-  const onDashboard = useLocation().pathname === '/';
+  // Band-built pages close on their own screen; document-style pages keep the slim strip.
+  const path = useLocation().pathname;
+  const onBandPage = path === '/' || path === '/settings';
   const items = MENU.map((m) => ({ label: m.label, ariaLabel: `Go to ${m.label}`, link: m.to }));
   const more = [
     ...['Features', 'Pricing', 'Docs'].map((l) => ({ label: l, link: `/#${l.toLowerCase()}` })),
@@ -41,7 +43,7 @@ export default function Layout({ session, workspace, onSignOut }) {
       </StaggeredMenu>
       <div className="nav-spacer" aria-hidden="true" />
       <main className="main"><Outlet /></main>
-      {onDashboard ? (
+      {onBandPage ? (
         <footer className="closing db-closing">
           <div className="wrap">
             <div className="db-closing-top db-split">
