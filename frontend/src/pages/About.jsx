@@ -2,9 +2,9 @@ import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import '../about.css';
 
-// Official Bittu Builds site (the address that is actually live today). Kept in
-// one place so the page never drifts from the real link.
-const BITTU_BUILDS = 'https://bittubuilds.github.io/bittu-builds/';
+// Official Bittu Builds site, as chosen by the founder. Kept in one place so the
+// page never drifts from the link he wants shown.
+const BITTU_BUILDS = 'https://bittuxnorthform.wuaze.com/';
 
 const CAPABILITIES = [
   {
