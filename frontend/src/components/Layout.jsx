@@ -28,7 +28,8 @@ export default function Layout({ session, workspace, onSignOut }) {
   const onBandPage = path === '/' || path === '/settings';
   const items = MENU.map((m) => ({ label: m.label, ariaLabel: `Go to ${m.label}`, link: m.to }));
   const more = [
-    ...['Features', 'Pricing', 'Docs'].map((l) => ({ label: l, link: `/#${l.toLowerCase()}` })),
+    { label: 'Features', link: '/#features' },
+    { label: 'Docs', link: '/docs' },
     { label: 'About', link: '/about' },
     { label: 'Privacy', link: '/privacy' },
     { label: 'Sign out', onClick: onSignOut },
@@ -64,6 +65,7 @@ export default function Layout({ session, workspace, onSignOut }) {
               <span>© {new Date().getFullYear()} SaaS Shield</span>
               <nav aria-label="Legal" className="footer-links">
                 <Link to="/about">About</Link>
+                <Link to="/docs">Docs</Link>
                 <Link to="/privacy">Privacy Policy</Link>
               </nav>
             </div>

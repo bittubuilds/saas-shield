@@ -11,6 +11,7 @@ import Privacy from './pages/Privacy.jsx';
 import About from './pages/About.jsx';
 import Settings from './pages/Settings.jsx';
 import Login from './pages/Login.jsx';
+import Docs from './pages/Docs.jsx';
 import { loadSession, primaryWorkspace, setWorkspaceId, signOut } from './services/api.js';
 
 export default function App() {
@@ -59,6 +60,8 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login onSignedIn={refresh} />} />
         <Route path="/about" element={<About />} />
+        <Route path="/docs" element={<Docs />} />
+        <Route path="/docs/:slug" element={<Docs />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
@@ -69,6 +72,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/about" element={<About signedIn />} />
+      <Route path="/docs" element={<Docs signedIn />} />
+      <Route path="/docs/:slug" element={<Docs signedIn />} />
       <Route element={<Layout session={session} workspace={space} onSignOut={handleSignOut} />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/scan/:websiteId" element={<Scanning />} />

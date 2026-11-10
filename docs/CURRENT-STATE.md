@@ -303,6 +303,48 @@ Measured after the rework: 900 / 900 / 900 at 1440x900 (hero, band, closing), 84
 the gate: `frontend/dist/settings-audit.html` (built page, stylesheets inlined, scripts removed,
 the moment's figures restored from their `aria-label`).
 
+## Documentation centre (2026-11-10)
+
+Every page of documentation that ships with the app, written against this build.
+
+- **Routes**: `/app/docs` (index) and `/app/docs/:slug` (35 articles), registered in both
+  trees in `App.jsx`, so the docs are readable signed out and signed in. Signed in, the
+  header CTA returns to the dashboard; signed out it offers sign-in. Linked from the
+  StaggeredMenu, both footers and the sign-in page.
+- **Content model**: `frontend/src/docs/content.js` is the single source. Seven sections,
+  35 articles, each an ordered list of typed blocks (`h2`/`h3`/`p`/`ul`/`ol`/`steps`/`table`/
+  `callout`/`related`). Adding an article is one object: the sidebar, search index, TOC,
+  prev/next and breadcrumbs all derive from it. No content lives in JSX.
+- **Search reads the body, not the labels.** `searchDocs` requires every query term to
+  appear in the article text, scores title 12 / summary 3 / body by frequency, and returns a
+  snippet around the first hit. "quota exhausted" finds the error table; a term that only
+  exists in a heading is found too. Two characters minimum, eight results maximum.
+- **TOC and active states.** `h2`/`h3` blocks get stable ids (`s-<index>-<slug>`); the right
+  rail is an `IntersectionObserver` with a `-88px / -68%` root margin, and the sidebar marks
+  the current article with `aria-current="page"`.
+- **Mobile**: below 860px the sidebar becomes an off-canvas drawer behind a 44px
+  `Contents` pill, with `aria-expanded`, a scrim that closes it, Escape to close and a close
+  on navigate. No horizontal overflow at 390px; tables scroll inside their own wrapper.
+- **Design**: one ground `#07070a`, hairline `rgba(255,255,255,.075)`, violet `#a78bfa` only
+  for links, active states and step numbers. Body 15px/1.72 at `#cdcbdb` (12.6:1), muted
+  `#9e9cb2` (7.5:1), labels `#8a889e` (5.8:1) after the contrast pass, headings Inter Tight
+  600 with tight tracking.
+
+Verified on the built bundle at 1440 and 390: all 35 pages return content (no empty body),
+46 internal links resolve to routes that exist, search returns body hits, the TOC scrolls
+and marks itself, the drawer opens/navigates/closes, zero page errors, `npm test` 308 pass.
+
+The honesty rules the content follows, because they are easy to break later:
+
+- Nothing is documented that the interface cannot do. Backend-only capabilities (discovery,
+  monitoring, alerts, members, finding status changes, CSV exports) are collected on one page
+  and labelled, and each affected article names its own gap.
+- No public API is claimed, so there is no API reference, no fake endpoints, no keys.
+- Every limit quoted is a real configured default: 25 pages per site, six competitors and
+  three pages each for the analysis, 40 model requests per scan, 200 per day, three attempts.
+- The similarity section repeats the product's own position: the score is measurable overlap,
+  not a probability of copying, and a report is not a legal opinion.
+
 ## Verified on production after the dashboard rework (2026-11-10, 11:3x IST)
 
 `main` `f099a99..3c3f083` pushed and rebuilt by Render automatically; `/app` now serves

@@ -146,6 +146,7 @@ export default function Login({ onSignedIn }) {
             <span>SaaS Shield</span>
           </a>
           <nav className="lg-topnav" aria-label="Secondary">
+            <Link to="/docs">Docs</Link>
             <Link to="/about">About</Link>
           </nav>
         </div>
@@ -234,6 +235,8 @@ export default function Login({ onSignedIn }) {
 
             <p className="lg-legal">
               By continuing you agree to our <a href="/app/privacy">Privacy Policy</a>.
+              {' · '}
+              <Link to="/docs">Read the docs</Link>
               {' · '}
               <Link to="/about">About SaaS Shield</Link>
             </p>
