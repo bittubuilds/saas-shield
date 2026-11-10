@@ -220,12 +220,18 @@ function SearchBox({ index, onGo, autoFocus, idPrefix }) {
         results.length ? (
           <ul className="dc-results" id={listId} role="listbox" aria-label="Search results">
             {results.map((r, i) => (
-              <li key={r.slug} id={`${listId}-${i}`} role="option" aria-selected={i === active}>
-                <button type="button" onMouseEnter={() => setActive(i)} onClick={() => go(r.slug)}>
-                  <span className="dc-result-t">{r.title}</span>
-                  <span className="dc-result-s">{r.section}</span>
-                  <span className="dc-result-x">{r.snippet}</span>
-                </button>
+              <li
+                key={r.slug}
+                id={`${listId}-${i}`}
+                role="option"
+                aria-selected={i === active}
+                className="dc-result"
+                onMouseEnter={() => setActive(i)}
+                onClick={() => go(r.slug)}
+              >
+                <span className="dc-result-t">{r.title}</span>
+                <span className="dc-result-s">{r.section}</span>
+                <span className="dc-result-x">{r.snippet}</span>
               </li>
             ))}
           </ul>
@@ -320,7 +326,13 @@ export default function Docs({ signedIn }) {
   const location = useLocation();
   const index = useMemo(buildIndex, []);
   const [drawer, setDrawer] = useState(false);
+  const drawerBtn = useRef(null);
   const closeDrawer = useCallback(() => setDrawer(false), []);
+  // Dismissing the drawer returns focus to the control that opened it.
+  const dismissDrawer = useCallback(() => {
+    setDrawer(false);
+    if (drawerBtn.current) drawerBtn.current.focus();
+  }, []);
 
   const article = slug ? BY_SLUG.get(slug) : null;
   const position = article ? FLAT.findIndex((a) => a.slug === article.slug) : -1;
@@ -333,13 +345,22 @@ export default function Docs({ signedIn }) {
     setDrawer(false);
   }, [slug, location.hash]);
 
-  // Close the mobile drawer with Escape, and keep it out of the tab order when shut.
+  // Open the drawer into focus, close it on Escape, and keep it out of the tab
+  // order while it is shut (a transform alone leaves links focusable off-screen).
   useEffect(() => {
     if (!drawer) return undefined;
-    const onKey = (e) => { if (e.key === 'Escape') setDrawer(false); };
+    const onKey = (e) => { if (e.key === 'Escape') dismissDrawer(); };
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [drawer]);
+    // Wait for the drawer's class to land, or the link is still visibility:hidden.
+    const frame = requestAnimationFrame(() => {
+      const first = document.querySelector('.dc-nav a');
+      if (first) first.focus();
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [drawer, dismissDrawer]);
 
   const headings = useMemo(() => {
     if (!article) return [];
@@ -361,8 +382,9 @@ export default function Docs({ signedIn }) {
   if (slug && !article) {
     return (
       <div className="dc-shell">
+        <a className="dc-skip" href="#dc-main">Skip to content</a>
         <DocsHeader signedIn={signedIn} />
-        <main className="dc-main" id="dc-main">
+        <main className="dc-main" id="dc-main" tabIndex={-1}>
           <section className="dc-article dc-missing">
             <p className="dc-crumb">Docs</p>
             <h1 className="dc-h1">That page does not exist</h1>
@@ -376,6 +398,7 @@ export default function Docs({ signedIn }) {
 
   return (
     <div className={`dc-shell${drawer ? ' is-drawer' : ''}`}>
+      <a className="dc-skip" href="#dc-main">Skip to content</a>
       <DocsHeader signedIn={signedIn} />
 
       <div className="dc-layout">
@@ -386,9 +409,9 @@ export default function Docs({ signedIn }) {
           </div>
         </aside>
 
-        {drawer && <button type="button" className="dc-scrim" aria-label="Close navigation" onClick={closeDrawer} />}
+        {drawer && <button type="button" className="dc-scrim" aria-label="Close navigation" onClick={dismissDrawer} />}
 
-        <main className="dc-main" id="dc-main">
+        <main className="dc-main" id="dc-main" tabIndex={-1}>
           {article ? (
             <article className="dc-article">
               <nav className="dc-crumb" aria-label="Breadcrumb">
@@ -404,6 +427,13 @@ export default function Docs({ signedIn }) {
                 {(article.blocks || []).map((block, i) => (
                   <Block key={i} block={block} headings={headingIds} index={i} />
                 ))}
+              </div>
+
+              <div className="dc-folio">
+                <span className="dc-folio-sec">{article.sectionTitle}</span>
+                <span className="dc-folio-n" aria-label={`Article ${position + 1} of ${FLAT.length}`}>
+                  {String(position + 1).padStart(2, '0')}&thinsp;/&thinsp;{FLAT.length}
+                </span>
               </div>
 
               <nav className="dc-pager" aria-label="Article navigation">
@@ -482,7 +512,8 @@ export default function Docs({ signedIn }) {
         className="dc-drawer-btn"
         aria-expanded={drawer}
         aria-controls="dc-side"
-        onClick={() => setDrawer((v) => !v)}
+        onClick={() => (drawer ? dismissDrawer() : setDrawer(true))}
+        ref={drawerBtn}
       >
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8">
           <path d="M4 7h16M4 12h16M4 17h10" strokeLinecap="round" />

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
 import { Loading } from './components/Status.jsx';
@@ -11,8 +11,24 @@ import Privacy from './pages/Privacy.jsx';
 import About from './pages/About.jsx';
 import Settings from './pages/Settings.jsx';
 import Login from './pages/Login.jsx';
-import Docs from './pages/Docs.jsx';
+// The documentation centre is 35 articles of content. It loads on demand so the
+// dashboard bundle never carries text the visitor is not reading.
+const Docs = lazy(() => import('./pages/Docs.jsx'));
 import { loadSession, primaryWorkspace, setWorkspaceId, signOut } from './services/api.js';
+
+function DocsRoute({ signedIn }) {
+  return (
+    <Suspense
+      fallback={
+        <main className="main">
+          <section className="page-narrow"><Loading label="Loading documentation…" /></section>
+        </main>
+      }
+    >
+      <Docs signedIn={signedIn} />
+    </Suspense>
+  );
+}
 
 export default function App() {
   // undefined = still asking the server, null = signed out
@@ -60,8 +76,8 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login onSignedIn={refresh} />} />
         <Route path="/about" element={<About />} />
-        <Route path="/docs" element={<Docs />} />
-        <Route path="/docs/:slug" element={<Docs />} />
+        <Route path="/docs" element={<DocsRoute />} />
+        <Route path="/docs/:slug" element={<DocsRoute />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
@@ -72,8 +88,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/about" element={<About signedIn />} />
-      <Route path="/docs" element={<Docs signedIn />} />
-      <Route path="/docs/:slug" element={<Docs signedIn />} />
+      <Route path="/docs" element={<DocsRoute signedIn />} />
+      <Route path="/docs/:slug" element={<DocsRoute signedIn />} />
       <Route element={<Layout session={session} workspace={space} onSignOut={handleSignOut} />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/scan/:websiteId" element={<Scanning />} />
