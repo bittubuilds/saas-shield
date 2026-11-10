@@ -222,6 +222,7 @@ export function describeInitialScan(payload) {
     status,
     pagesCompared: compared,
     findings: findingsTotal != null ? findingsTotal : (scan && scan.findings != null ? scan.findings : null),
+    notice: (scan && scan.notice) || null,
     error: (scan && scan.error) || null,
     // Nothing is running and nothing will start on its own: no scan row, no
     // discovery, and no comparison site to scan against. Terminal, not "queued".

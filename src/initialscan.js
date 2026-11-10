@@ -185,6 +185,7 @@ function status(workspaceId, siteId) {
       status: scan.status,
       pages_compared: scan.pages_compared ?? null,
       findings: scan.findings ?? null,
+      notice: scan.notice || null,
       error: scan.error || null,
       created_at: scan.created_at,
       finished_at: scan.finished_at || null

@@ -436,6 +436,31 @@ local run tested, so the two builds are identical.
   + IP in 15 min, then `429 Too many attempts` (persisted in the DB, so a restart
   does not reset the budget), and signup never reveals whether an address exists.
 
+## Empty scans are no longer silent (2026-11-10)
+
+Found while testing the pipeline end to end. A scan whose pages carry too little
+readable text completed with `pages_compared 0`, `findings 0` and no signal at all,
+so the UI showed a clean result for a comparison that never happened. Reproduced with
+a real pair: `example.com` (171 characters of text) against a site behind a
+JavaScript bot challenge (0 characters stored). Both were under the 50-word floor,
+so nothing was compared and nothing said so.
+
+Fixed by recording the reason on the scan itself:
+
+- `scans.notice` (migration 15) holds a plain-language explanation.
+- `src/scanner.js` counts readable pages per site when no pair is eligible and writes
+  the notice with both host labels, for example
+  `Nothing was compared: no page pair had at least 50 words of readable text on both sides (example.com: 0 of 1 page(s) readable, bittuxnorthform.wuaze.com: 0 of 1 page(s) readable).`
+- `src/initialscan.js`, `frontend/src/services/api.js` and the Scanning screen pass it
+  through, so the progress screen states the reason instead of "No overlapping content
+  was found."
+- `tests/detection-pipeline.test.js` asserts the notice appears, states that nothing
+  was compared, counts readable pages, and names both sites with their port.
+
+Scan status stays `completed`: the run did finish, it just proves nothing. Anything
+that reads `pages_compared` should treat `0` together with a notice as "not examined"
+rather than "clean".
+
 ## Known gaps, in priority order
 
 1. **AI provider key missing on Render.** Set `GROQ_API_KEY` (or `AI_API_KEY`) in

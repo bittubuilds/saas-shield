@@ -102,6 +102,26 @@ async function runScan(scanId) {
       }
     }
 
+    // An empty comparison is not a clean result. Nothing being compared almost
+    // always means the crawl stored no readable text (a JavaScript-rendered page, a
+    // bot challenge, a page under the word floor), so record why and say so in the
+    // scan row instead of reporting "no findings" as if the copy had been examined.
+    let notice = null;
+    if (eligible.length === 0) {
+      const readable = (rows) => rows.filter((p) => sim.tokenize(p.text_content || '').length >= MIN_WORDS).length;
+      const hostOf = (site) => {
+        const raw = site.url || site.submitted_url || site.site_url || '';
+        // host, not hostname: two fixtures on one box differ only by port.
+        try { return new URL(raw).host; } catch { return raw || 'the site'; }
+      };
+      const a = readable(originalPages);
+      const b = readable(comparisonPages);
+      notice = `Nothing was compared: no page pair had at least ${MIN_WORDS} words of readable text on both sides `
+        + `(${hostOf(original)}: ${a} of ${originalPages.length} page(s) readable, `
+        + `${hostOf(comparison)}: ${b} of ${comparisonPages.length} page(s) readable). `
+        + 'A page comes back empty when the site renders its text with JavaScript, serves a bot challenge, or carries very little copy.';
+    }
+
     // Build corpus tokens for TF-IDF idf values: all eligible docs.
     const corpusTokens = [];
     for (const [a, b] of eligible) {
@@ -190,9 +210,9 @@ async function runScan(scanId) {
       findingRows.push({ resultId, a: a.url, b: b.url, matchType: result.matchType });
     }
 
-    db.prepare(`UPDATE scans SET status='completed', pages_compared=?, findings=?, finished_at=? WHERE id=?`)
-      .run(pairsCompared, findings, utcNow(), scanId);
-    audit(scan.workspace_id, null, 'scan.completed', { scanId, pairsCompared, findings });
+    db.prepare(`UPDATE scans SET status='completed', pages_compared=?, findings=?, notice=?, finished_at=? WHERE id=?`)
+      .run(pairsCompared, findings, notice, utcNow(), scanId);
+    audit(scan.workspace_id, null, 'scan.completed', { scanId, pairsCompared, findings, empty: notice ? 'no_comparable_pages' : undefined });
   } catch (e) {
     const cancelled = e.code === 'CANCELLED';
     db.prepare(`UPDATE scans SET status=?, error=?, finished_at=? WHERE id=?`)

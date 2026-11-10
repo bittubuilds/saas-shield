@@ -158,6 +158,11 @@ test('a verbatim shared paragraph is detected with evidence, and a distinct site
   assert.equal(thin.status, 'completed');
   assert.equal(thin.pages_compared, 0, 'thin pages must not be counted as comparisons');
   assert.equal(thin.findings, 0, 'thin pages must not invent findings');
+  // Zero comparisons must never read as "clean": the scan row carries the reason.
+  assert.ok(thin.notice, 'an empty comparison records why nothing was compared');
+  assert.match(thin.notice, /Nothing was compared/, 'the notice states the outcome plainly');
+  assert.match(thin.notice, /: 0 of \d+ page\(s\) readable/, 'the notice counts readable pages per site');
+  assert.equal(new Set(thin.notice.match(/127\.0\.0\.1:\d+/g) || []).size, 2, 'both sites are named with their port');
   const thinResults = (await c(`/workspaces/${ws}/results?scan_id=${thin.id}`)).data.results || [];
   assert.equal(thinResults.length, 0, 'no results are fabricated for thin pages');
 });

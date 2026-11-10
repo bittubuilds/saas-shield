@@ -945,5 +945,15 @@ module.exports = [
       ALTER TABLE websites ADD COLUMN archived_at TEXT;
       CREATE INDEX IF NOT EXISTS idx_websites_archived ON websites(workspace_id, archived_at);
     `
+  },
+  {
+    version: 15,
+    name: 'scan-notice',
+    // An empty comparison is usually a crawl or rendering failure, not proof of
+    // original copy. Record why nothing was compared so the UI can say so instead
+    // of reporting a clean result.
+    sql: `
+      ALTER TABLE scans ADD COLUMN notice TEXT;
+    `
   }
 ];

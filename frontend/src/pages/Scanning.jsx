@@ -95,7 +95,8 @@ export default function Scanning() {
             {state.needsComparison ? 'No comparison site is available yet, so no scan has run. Add the site you want to check against, or run discovery, and the scan starts on its own.'
               : state.failed ? (state.error || 'The scan failed.')
               : state.cancelled ? 'This scan was cancelled.'
-              : state.done ? (state.findings ? `${state.findings} finding(s) recorded.` : 'No overlapping content was found.')
+              : state.done ? (state.notice ? state.notice
+                : state.findings ? `${state.findings} finding(s) recorded.` : 'No overlapping content was found.')
               : stage.description}
           </p>
 
