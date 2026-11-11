@@ -496,6 +496,25 @@ Open risk: public engines rate-limit datacenter IPs. If discovery starts failing
 Render, set `SERPER_API_KEY` (free tier, serper.dev) and the same code path becomes
 reliable without any other change.
 
+## Pages that ship a JavaScript shell (2026-11-11)
+
+Free hosts and SPA sites answer a plain GET with a stub ("This site requires
+Javascript…") and deliver the real page only after script runs. The crawler stored
+that stub, so the page text was empty, discovery had no sentence to search and the
+scan compared nothing. Reproduced on `bittuxnorthform.wuaze.com`, which returns 852
+bytes of InfinityFree challenge markup.
+
+`src/render.js` renders such a page once with the browser screenshots already use and
+returns the hydrated HTML; `src/crawler.js` calls it only when a response carries less
+than 200 characters of visible text, and keeps the thin copy if the render fails so a
+browser problem never loses the page. The rendered context reuses the capture
+blocklist, so a page cannot pull an internal address in through script or fetch.
+
+Switches: on automatically when `NODE_ENV=production` and Playwright is installed,
+forced with `CRAWL_RENDER_THIN_PAGES=1`, off with `0`. Tests inject a renderer instead
+of launching a browser. Verified on the real site: 0 → 1879 characters of readable
+text after the fallback.
+
 ## Known gaps, in priority order
 
 1. **AI provider key missing on Render.** Set `GROQ_API_KEY` (or `AI_API_KEY`) in

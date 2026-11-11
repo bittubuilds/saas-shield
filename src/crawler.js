@@ -91,6 +91,19 @@ async function robotsAllows(urlObj) {
 }
 
 // Fetch a single URL with manual redirect revalidation and response caps.
+// Rough visible-text length, cheap enough to run on every response: strips
+// script/style bodies and tags, then counts what is left.
+const THIN_TEXT_CHARS = 200;
+function visibleTextLength(html) {
+  return String(html || '')
+    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim().length;
+}
+
 async function fetchPage(rawUrl, opts = {}) {
   let current = rawUrl;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
@@ -177,7 +190,28 @@ async function fetchPage(rawUrl, opts = {}) {
       err.code = 'TOO_LARGE';
       throw err;
     }
-    const html = Buffer.concat(chunks).toString('utf8');
+    let html = Buffer.concat(chunks).toString('utf8');
+
+    // A stub page is worse than no page: it stores an empty document, discovery
+    // finds nothing to search and a scan compares nothing. If the markup carries
+    // almost no text, render it once with a real browser and keep whichever copy
+    // has more to work with.
+    const allowRender = typeof opts.renderHtml === 'function'
+      || (opts.renderHtml !== false && require('./render').enabled());
+    if (allowRender && visibleTextLength(html) < THIN_TEXT_CHARS) {
+      const renderImpl = typeof opts.renderHtml === 'function' ? opts.renderHtml : require('./render').renderHtml;
+      try {
+        const rendered = await renderImpl(u.toString());
+        if (rendered && typeof rendered.html === 'string' && visibleTextLength(rendered.html) > visibleTextLength(html)) {
+          html = rendered.html;
+          return { html, finalUrl: rendered.finalUrl || u.toString(), httpStatus: res.status, rendered: true };
+        }
+      } catch (e) {
+        // Keep the thin static response: a failed render must not lose the page.
+        console.warn('[crawler] render fallback failed:', e.message);
+      }
+    }
+
     return { html, finalUrl: u.toString(), httpStatus: res.status };
   }
   throw new UnsafeUrlError('too many redirects');
