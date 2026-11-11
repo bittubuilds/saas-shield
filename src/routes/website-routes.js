@@ -62,17 +62,34 @@ router.post('/workspaces/:workspaceId/websites', requireWorkspace(), rateLimit({
 
   // Only one "original" per workspace by design; multiple comparisons allowed.
   if (kind === 'original') {
-    const existingOriginal = db.prepare(`SELECT id FROM websites WHERE workspace_id=? AND kind='original' AND status != 'paused'`).get(req.workspace.id);
+    const existingOriginal = db.prepare(`SELECT id FROM websites WHERE workspace_id=? AND kind='original' AND status != 'paused' AND archived_at IS NULL`).get(req.workspace.id);
     if (existingOriginal) return res.status(409).json({ error: 'This workspace already has an original website. Pause or remove it first.' });
   }
 
-  const dup = db.prepare('SELECT id FROM websites WHERE workspace_id=? AND kind=? AND normalized_domain=?').get(req.workspace.id, kind, parsed.domain);
+  const dup = db.prepare('SELECT id FROM websites WHERE workspace_id=? AND kind=? AND normalized_domain=? AND archived_at IS NULL').get(req.workspace.id, kind, parsed.domain);
   if (dup) return res.status(409).json({ error: `This ${kind} website is already registered.` });
+
+  // Re-adding a site the user removed restores the archived row instead of
+  // refusing the URL: the pages, scans and reports already point at it, and a
+  // second row for the same domain would split that history in half.
+  const archivedSame = db.prepare(
+    `SELECT * FROM websites WHERE workspace_id=? AND kind=? AND normalized_domain=? AND archived_at IS NOT NULL
+     ORDER BY created_at DESC LIMIT 1`).get(req.workspace.id, kind, parsed.domain);
+  if (archivedSame) {
+    db.prepare('UPDATE websites SET archived_at=NULL, status=?, submitted_url=?, label=?, updated_at=? WHERE id=?')
+      .run('active', parsed.submittedUrl, label || archivedSame.label || null, utcNow(), archivedSame.id);
+    audit(req.workspace.id, req.user.id, 'website.restored', { id: archivedSame.id, url: parsed.submittedUrl });
+    return res.status(200).json({
+      website: serializeSite(db.prepare('SELECT * FROM websites WHERE id=?').get(archivedSame.id)),
+      restored: true,
+      initial_scan: { mode: 'restored', started: false }
+    });
+  }
 
   // A competitor that normalises to the site you are checking would pair a site
   // with itself, which can only produce noise. Refuse it at creation.
   if (kind === 'comparison') {
-    const original = db.prepare(`SELECT normalized_domain FROM websites WHERE workspace_id=? AND kind='original' AND status!='paused'`).get(req.workspace.id);
+    const original = db.prepare(`SELECT normalized_domain FROM websites WHERE workspace_id=? AND kind='original' AND status!='paused' AND archived_at IS NULL`).get(req.workspace.id);
     if (original && original.normalized_domain === parsed.domain) {
       return res.status(409).json({ error: 'That is the same site you are checking. Add the other website you want to compare against.' });
     }

@@ -308,6 +308,40 @@ test('complete user journey: signup, websites, real scan, review, export, persis
   const pagesKept = await a.req('GET', `/workspaces/${wsId}/websites/${unrelId}/pages`);
   assert.equal(pagesKept.status, 200, 'evidence stays readable after removal, so old reports keep their sources');
 
+  // --- 12b. a removed original must stop blocking the workspace ---------------
+  // Removing a site archives the row (evidence stays readable), so the "one
+  // original" guard has to ignore archived rows or the workspace is bricked.
+  const c = client();
+  const cSignup = await c.req('POST', '/auth/signup', { email: 'third@example.com', password: 'thirdpass123' });
+  assert.equal(cSignup.status, 201);
+  const cWs = cSignup.data.workspace.id;
+  const cFirst = await c.req('POST', `/workspaces/${cWs}/websites`, { url: `http://127.0.0.1:${origSite.port}/`, kind: 'original', auto_scan: false });
+  assert.equal(cFirst.status, 201);
+  const cSecond = await c.req('POST', `/workspaces/${cWs}/websites`, { url: `http://127.0.0.1:${dupSite.port}/`, kind: 'original', auto_scan: false });
+  assert.equal(cSecond.status, 409, 'one live original at a time');
+  const cDel = await c.req('DELETE', `/workspaces/${cWs}/websites/${cFirst.data.website.id}`);
+  assert.equal(cDel.status, 200, 'remove archives the original');
+  const cAfter = await c.req('POST', `/workspaces/${cWs}/websites`, { url: `http://127.0.0.1:${dupSite.port}/`, kind: 'original', auto_scan: false });
+  assert.equal(cAfter.status, 201, 'a removed original no longer blocks the workspace');
+  const cDash = await c.req('GET', `/workspaces/${cWs}/dashboard`);
+  assert.equal(cDash.data.monitored_websites, 1, 'only the live original counts on the dashboard');
+  // Re-adding the removed URL restores its row and history instead of 409ing.
+  // Needs its own workspace: elsewhere a live original is a legitimate 409.
+  const d = client();
+  const dSignup = await d.req('POST', '/auth/signup', { email: 'fourth@example.com', password: 'fourthpass123' });
+  assert.equal(dSignup.status, 201);
+  const dWs = dSignup.data.workspace.id;
+  const dFirst = await d.req('POST', `/workspaces/${dWs}/websites`, { url: `http://127.0.0.1:${origSite.port}/`, kind: 'original', auto_scan: false });
+  assert.equal(dFirst.status, 201);
+  const dDel = await d.req('DELETE', `/workspaces/${dWs}/websites/${dFirst.data.website.id}`);
+  assert.equal(dDel.status, 200);
+  const dBack = await d.req('POST', `/workspaces/${dWs}/websites`, { url: `http://127.0.0.1:${origSite.port}/`, kind: 'original', auto_scan: false });
+  assert.equal(dBack.status, 200, 'a removed site can be added back');
+  assert.equal(dBack.data.restored, true);
+  assert.equal(dBack.data.website.id, dFirst.data.website.id, 'the same row comes back, so its history stays attached');
+  const dDash = await d.req('GET', `/workspaces/${dWs}/dashboard`);
+  assert.equal(dDash.data.monitored_websites, 1, 'the restored site counts again');
+
   // members management
   const addMember = await a.req('POST', `/workspaces/${wsId}/members`, { email: 'other@example.com', role: 'member' });
   assert.equal(addMember.status, 201);

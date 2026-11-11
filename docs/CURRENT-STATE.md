@@ -461,6 +461,19 @@ Scan status stays `completed`: the run did finish, it just proves nothing. Anyth
 that reads `pages_compared` should treat `0` together with a notice as "not examined"
 rather than "clean".
 
+## Removed sites no longer block the workspace (2026-11-11)
+
+Removing a website archives the row (`archived_at`) so its scans and reports stay
+readable, but four lookups still treated archived rows as live: the "one original"
+guard and the self-pair guard in `src/routes/website-routes.js`, the active-original
+and comparison lookups in `src/initialscan.js`, and the dashboard's
+`monitored_websites` count. The visible symptom was a workspace that refused a new
+original with "Pause or remove it first" after the site had been removed.
+
+Re-adding a removed URL now restores that same row (`restored: true`, status 200)
+instead of returning 409, because a second row for the domain would split the page,
+scan and report history in half. Covered by the journey test in `tests/app.test.js`.
+
 ## Known gaps, in priority order
 
 1. **AI provider key missing on Render.** Set `GROQ_API_KEY` (or `AI_API_KEY`) in

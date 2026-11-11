@@ -10,7 +10,8 @@ router.use(requireAuth);
 // Dashboard: real database-backed metrics only.
 router.get('/workspaces/:workspaceId/dashboard', requireWorkspace(), (req, res) => {
   const ws = req.workspace.id;
-  const monitored = db.prepare("SELECT COUNT(*) c FROM websites WHERE workspace_id=? AND status != 'paused'").get(ws).c;
+  // A removed site is archived, not deleted, so it must not keep counting here.
+  const monitored = db.prepare("SELECT COUNT(*) c FROM websites WHERE workspace_id=? AND status != 'paused' AND archived_at IS NULL").get(ws).c;
   const lastScan = db.prepare("SELECT MAX(finished_at) m FROM scans WHERE workspace_id=? AND status='completed'").get(ws).m;
   const scansCompleted = db.prepare("SELECT COUNT(*) c FROM scans WHERE workspace_id=? AND status='completed'").get(ws).c;
   const scansFailed = db.prepare("SELECT COUNT(*) c FROM scans WHERE workspace_id=? AND status IN ('failed','cancelled')").get(ws).c;

@@ -25,7 +25,7 @@ const { recoverStaleScans } = require('./scan-recovery');
 function pickComparison(workspaceId, excludeId, excludeDomain) {
   return db.prepare(`
     SELECT id, submitted_url FROM websites
-    WHERE workspace_id=? AND id!=? AND status!='paused'
+    WHERE workspace_id=? AND id!=? AND status!='paused' AND archived_at IS NULL
       AND normalized_domain != COALESCE(?, '')
     ORDER BY (kind='comparison') DESC, created_at ASC
     LIMIT 1`).get(workspaceId, excludeId, excludeDomain || '');
@@ -75,7 +75,7 @@ function start({ workspaceId, siteId, userId }) {
   // competitor, the original is the thing it gets compared against.
   const original = site.kind === 'original'
     ? site
-    : db.prepare(`SELECT * FROM websites WHERE workspace_id=? AND kind='original' AND status!='paused' ORDER BY created_at ASC LIMIT 1`).get(workspaceId);
+    : db.prepare(`SELECT * FROM websites WHERE workspace_id=? AND kind='original' AND status!='paused' AND archived_at IS NULL ORDER BY created_at ASC LIMIT 1`).get(workspaceId);
 
   if (!original) {
     return {
