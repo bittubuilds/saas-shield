@@ -84,7 +84,23 @@ app.get('/api/health', (req, res) => {
     github_oauth_configured: config.oauth.github.configured,
     database: (() => { try { return durability.probe(); } catch (e) { return { error: e.message }; } })(),
     scheduler_enabled: config.scheduler.enabled,
-    external_cron_configured: Boolean(config.scheduler.cronSecret)
+    external_cron_configured: Boolean(config.scheduler.cronSecret),
+    // Which optional engines this deployment actually has. Booleans and provider
+    // names only: this answers "why did nothing run" without needing an account.
+    capabilities: (() => {
+      try {
+        const render = require('./render');
+        const search = require('./search');
+        return {
+          render_pages: render.available(),
+          render_enabled: render.enabled(),
+          search_provider: search.describe().provider,
+          search_available: search.isSearchConfigured()
+        };
+      } catch (e) {
+        return { error: e.message };
+      }
+    })()
   });
 });
 
