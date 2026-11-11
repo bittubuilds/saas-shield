@@ -474,6 +474,28 @@ Re-adding a removed URL now restores that same row (`restored: true`, status 200
 instead of returning 409, because a second row for the domain would split the page,
 scan and report history in half. Covered by the journey test in `tests/app.test.js`.
 
+## Discovery without a search key (2026-11-11)
+
+Auto-discovery was gated on `SERPER_API_KEY`, so a deployment without the key could
+never find comparison sites: adding an original left the scan page at 0% with
+`needs_comparison` and an instruction to add a site by hand.
+
+`src/search.js` now runs a provider chain: Serper when the key exists, otherwise
+DuckDuckGo's HTML endpoint then Mojeek, both keyless. The first engine that returns
+links wins, results go through the existing host blocklist and SSRF-guarded crawler,
+and if every engine fails the discovery still reports an honest error rather than an
+empty success. A dead key also falls back instead of switching discovery off.
+
+Because `search.isSearchConfigured()` is now true without a key, `src/initialscan.js`
+starts discovery automatically on adding a website: `initial_scan.mode` is
+`discovery`, found sites are registered as comparison websites and scans are queued.
+The keyless chain is off under `NODE_ENV=test` (tests stub `fetch`) and can be forced
+off in production with `SEARCH_KEYLESS_DISABLED=1`.
+
+Open risk: public engines rate-limit datacenter IPs. If discovery starts failing on
+Render, set `SERPER_API_KEY` (free tier, serper.dev) and the same code path becomes
+reliable without any other change.
+
 ## Known gaps, in priority order
 
 1. **AI provider key missing on Render.** Set `GROQ_API_KEY` (or `AI_API_KEY`) in
