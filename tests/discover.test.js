@@ -275,3 +275,35 @@ test('short marketing copy still yields a search query', () => {
   const picked = discover.pickSearchSentences(pages, []);
   assert.ok(picked.length >= 1, 'a relaxed tier must find something to search for');
 });
+
+// "Completed" with no site to compare used to be silent, and the progress screen then
+// showed a placeholder "queued" with nothing behind it. The row now says why.
+test('a completed discovery that kept nothing records the reason', async () => {
+  await ready();
+  const c = client();
+  const wsId = await makeAccount(c);
+  const site = await c(`/workspaces/${wsId}/websites`, { method: 'POST', body: { url: 'http://127.0.0.1:1/', kind: 'original', auto_scan: false } });
+  const origId = site.data.website.id;
+  const orig = db.prepare('SELECT * FROM websites WHERE id=?').get(origId);
+  db.prepare(`INSERT INTO pages (id, website_id, workspace_id, url, submitted_url, canonical_url, title, text_content, meta_description, content_hash, http_status, fetched_at)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(newId('pg'), origId, wsId, 'http://127.0.0.1:1/', orig.submitted_url, null, 'Home',
+         'Our platform helps modern logistics teams coordinate warehouse operations across every facility in real time with predictive arrival windows.',
+         null, 'h1', 200, utcNow());
+
+  const run = async (urls) => {
+    const id = newId('dsc');
+    db.prepare(`INSERT INTO discoveries (id, workspace_id, original_website_id, status, created_by, created_at, updated_at)
+                VALUES (?,?,?, 'queued', ?, ?, ?)`).run(id, wsId, origId, null, utcNow(), utcNow());
+    await discover.runDiscovery(id, { searchFn: async () => urls });
+    return db.prepare('SELECT status, error, created_scan_count FROM discoveries WHERE id=?').get(id);
+  };
+
+  const empty = await run([]);
+  assert.equal(empty.status, 'completed');
+  assert.match(empty.error, /no results/i);
+
+  const ownOnly = await run(['https://facebook.com/spam']);
+  assert.equal(ownOnly.status, 'completed');
+  assert.match(ownOnly.error, /none were kept/i);
+});

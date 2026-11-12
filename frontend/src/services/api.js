@@ -201,7 +201,15 @@ export const getDiscovery = (id) => request(ws(`/discoveries/${enc(id)}`));
 export function describeInitialScan(payload) {
   if (!payload) return null;
   const { website, scan, comparison, discovery, findings_total: findingsTotal, done } = payload;
-  const status = scan ? scan.status : (website && website.crawl_status === 'crawling' ? 'running' : 'queued');
+  // With no scan row the old code reported 'queued', which reads as "a job is waiting".
+  // After a finished discovery that found nothing to compare, nothing is waiting at
+  // all, and saying so is the only thing that tells the user what to do next.
+  const discoveryOver = !!(discovery && (discovery.status === 'completed' || discovery.status === 'failed'));
+  const status = scan
+    ? scan.status
+    : (website && website.crawl_status === 'crawling'
+      ? 'running'
+      : (discoveryOver ? 'no scan started' : 'queued'));
   const pages = website && website.pages_discovered != null ? website.pages_discovered : null;
   const compared = scan && scan.pages_compared != null ? scan.pages_compared : null;
 
@@ -227,6 +235,9 @@ export function describeInitialScan(payload) {
     // Nothing is running and nothing will start on its own: no scan row, no
     // discovery, and no comparison site to scan against. Terminal, not "queued".
     needsComparison: !(scan && scan.id) && !discovery && !(comparison && comparison.available),
+    worker: scan ? scan.worker : null,
+    // Discovery ended and produced no scan: there is nothing to wait for.
+    noScanStarted: !scan && discoveryOver,
     done: !!done,
     cancelled: !!(scan && scan.status === 'cancelled'),
     failed: !!(scan && scan.status === 'failed'),

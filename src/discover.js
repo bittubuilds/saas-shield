@@ -281,8 +281,20 @@ async function runDiscovery(discoveryId, opts = {}) {
       console.error('[discover] competitor layer unavailable:', e.message);
     }
 
-    db.prepare(`UPDATE discoveries SET status='completed', provider=?, queries=?, found_hosts=?, created_scan_count=?, finished_at=?, updated_at=? WHERE id=?`)
+    // "Completed" with nothing to compare is not a success the user can act on. Say
+    // why in the row, so the screen can explain it instead of sitting on "queued".
+    let nothingFoundReason = null;
+    if (registered.length === 0) {
+      nothingFoundReason = foundUrls.length === 0
+        ? `Search returned no results for ${queriesUsed.length} quoted sentence(s) from your site. Your wording may not appear anywhere else yet.`
+        : `Search returned ${foundUrls.length} link(s), but all were your own site, a large platform, or an unsafe address, so none were kept.`;
+    } else if (createdScans === 0) {
+      nothingFoundReason = 'The sites found already had a scan running, or the workspace limit for queued scans was reached.';
+    }
+
+    db.prepare(`UPDATE discoveries SET status='completed', error=?, provider=?, queries=?, found_hosts=?, created_scan_count=?, finished_at=?, updated_at=? WHERE id=?`)
       .run(
+        nothingFoundReason,
         search.isSearchConfigured() ? 'serper' : (opts.searchFn ? 'test' : 'none'),
         JSON.stringify(queriesUsed),
         JSON.stringify(registered),

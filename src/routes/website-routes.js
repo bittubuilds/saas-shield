@@ -139,6 +139,18 @@ router.get('/workspaces/:workspaceId/websites/:id/initial-scan', requireWorkspac
   let out = initialScan.status(req.workspace.id, req.params.id);
   if (!out) return res.status(404).json({ error: 'Website not found.' });
 
+  // A scan that says 'queued' while no worker in this process holds it was lost to a
+  // restart: hand it back to the queue now instead of waiting for the next boot or
+  // the stale window. Only a never-started row is touched, so nothing runs twice.
+  if (out.scan && out.scan.status === 'queued' && !out.scan.started_at && !out.scan.worker) {
+    try {
+      require('../scanner').enqueueScan(out.scan.id);
+      out = initialScan.status(req.workspace.id, req.params.id) || out;
+    } catch (e) {
+      console.error('[initial-scan] could not resume a queued scan:', e.message);
+    }
+  }
+
   // Self-healing poll. A workspace can sit on "needs a comparison site" for
   // reasons the user cannot fix from this screen: the website was added before
   // rendering or search worked, so nothing was ever started. When nothing is

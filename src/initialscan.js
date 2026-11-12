@@ -211,6 +211,10 @@ function status(workspaceId, siteId) {
       findings: scan.findings ?? null,
       notice: scan.notice || null,
       error: scan.error || null,
+      started_at: scan.started_at || null,
+      // True only when this process holds a live worker for the scan. A row that
+      // says queued with worker:false is orphaned (restart lost it), not slow.
+      worker: scanner.isRunning(scan.id),
       created_at: scan.created_at,
       finished_at: scan.finished_at || null
     } : null,

@@ -586,6 +586,20 @@ resumed, so nothing can run twice; rows already `running` are left to the stale-
 recovery because a half-finished crawl is not restartable. Covered by
 `tests/discovery-recovery.test.js`.
 
+## "Queued" with nothing queued (2026-11-12)
+
+Seen in a screen recording: `Discovery: completed`, `Pages read: 2`, `Status: queued`,
+`Pages compared: -`. Reproduced locally: a completed discovery that registered no
+comparison creates no scan row, and `describeInitialScan` then fell back to the
+placeholder `'queued'`, which reads as a waiting job when nothing was waiting.
+
+Changes: the screen now says `no scan started` plus the reason when discovery is over
+and there is no scan; a completed discovery that kept nothing records why in
+`discoveries.error` (no search results, only own/platform links, or scans already
+running); the initial-scan payload carries `worker` (true only if this process holds the
+scan) and `started_at`; a `queued` scan with no worker is handed back to the queue by the
+poll itself, not only at boot. Covered in `tests/discover.test.js`.
+
 ## Known gaps, in priority order
 
 1. **AI provider key missing on Render.** Set `GROQ_API_KEY` (or `AI_API_KEY`) in

@@ -100,8 +100,15 @@ export default function Scanning() {
               : stage.description}
           </p>
 
+          {state.noScanStarted && (
+            <p className="muted">
+              Discovery finished but did not find a site to compare against, so no scan was
+              started. {state.discovery && state.discovery.error ? state.discovery.error : 'Add a site you want to check against and the scan starts on its own.'}
+            </p>
+          )}
+
           <dl className="details card">
-            <dt>Status</dt><dd>{state.status}</dd>
+            <dt>Status</dt><dd>{state.status}{state.status === 'queued' && state.worker === false ? <span className="muted"> - waiting for a worker, restarting it</span> : null}</dd>
             <dt>Pages read</dt><dd>{state.pages ?? '—'}</dd>
             <dt>Pages compared</dt><dd>{state.pagesCompared ?? '—'}</dd>
             <dt>Findings</dt><dd>{state.findings ?? '—'}</dd>
