@@ -63,23 +63,33 @@ function splitSentences(text) {
 // as many pages as possible.
 function pickSearchSentences(pages, boilerTokens) {
   const boiler = new Set(boilerTokens || []);
-  const picked = [];
-  for (const p of pages) {
-    if (picked.length >= MAX_QUERIES) break;
-    const candidates = splitSentences(p.text_content)
-      .filter((s) => s.length >= MIN_CHARS && s.length <= MAX_CHARS)
-      .map((s) => {
-        const words = sim.tokenize(s);
-        return { s, words };
-      })
-      .filter((c) => c.words.length >= MIN_WORDS)
-      .filter((c) => c.words.filter((w) => boiler.has(w)).length / c.words.length < 0.4);
-    if (candidates.length === 0) continue;
-    // Prefer the sentence with the most content words.
-    candidates.sort((a, b) => b.words.length - a.words.length);
-    picked.push(candidates[0].s);
+
+  // Three tiers, tried in order. The strict rule is the best evidence, but a short
+  // marketing portfolio can contain no 8-word sentence at all, and that used to end
+  // discovery with "no distinctive text sentences" even though the page was read
+  // perfectly. Falling back beats refusing to search.
+  const tiers = [
+    { minWords: MIN_WORDS, minChars: MIN_CHARS, maxChars: MAX_CHARS, maxBoiler: 0.4 },
+    { minWords: 5, minChars: 24, maxChars: 220, maxBoiler: 0.6 },
+    { minWords: 4, minChars: 16, maxChars: 240, maxBoiler: 1 }
+  ];
+
+  for (const tier of tiers) {
+    const picked = [];
+    for (const p of pages) {
+      if (picked.length >= MAX_QUERIES) break;
+      const candidates = splitSentences(p.text_content)
+        .filter((s) => s.length >= tier.minChars && s.length <= tier.maxChars)
+        .map((s) => ({ s, words: sim.tokenize(s) }))
+        .filter((c) => c.words.length >= tier.minWords)
+        .filter((c) => c.words.filter((w) => boiler.has(w)).length / c.words.length < tier.maxBoiler);
+      if (candidates.length === 0) continue;
+      candidates.sort((a, b) => b.words.length - a.words.length);
+      picked.push(candidates[0].s);
+    }
+    if (picked.length > 0) return picked;
   }
-  return picked;
+  return [];
 }
 
 // ---------------------------------------------------------------------------
@@ -160,6 +170,12 @@ async function runDiscovery(discoveryId, opts = {}) {
     const pages = scanner.contentUniquePages(original.id);
     if (pages.length === 0) {
       throw new Error('No readable content could be extracted from the original website.');
+    }
+    // Distinguish "we stored a page but it had no text" from "we found no sentence
+    // worth searching": they need different fixes and the old message conflated them.
+    const hasAnyText = pages.some((p) => String(p.text_content || '').trim().length > 0);
+    if (!hasAnyText) {
+      throw new Error('The page was fetched but its text was empty. If the site renders with JavaScript, run the scan again in a minute so the browser can be installed.');
     }
 
     // 2. Distinctive sentences -> web search.

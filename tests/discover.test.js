@@ -267,3 +267,11 @@ test('repeated discovery runs respect the workspace budget', async () => {
   const pending = db.prepare(`SELECT COUNT(*) c FROM scans WHERE workspace_id=? AND status='queued'`).get(wsId).c;
   assert.ok(pending <= 3, `queued scans must stay bounded, got ${pending}`);
 });
+
+// A short portfolio has no 8-word sentence, and that used to end discovery with
+// "no distinctive text sentences" even though the page was read fine.
+test('short marketing copy still yields a search query', () => {
+  const pages = [{ text_content: 'Bittu Builds. Website design and automation. Good work should feel easy. Discuss your website.' }];
+  const picked = discover.pickSearchSentences(pages, []);
+  assert.ok(picked.length >= 1, 'a relaxed tier must find something to search for');
+});
