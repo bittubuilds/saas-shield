@@ -55,11 +55,20 @@ function queueDiscovery(workspaceId, originalId, userId) {
   // The progress screen polls, and this decision runs on every poll. Reuse a live
   // attempt, or one from the last ten minutes, so a page refresh cannot stack
   // discovery jobs against the same search quota.
-  const recent = db.prepare(`SELECT id FROM discoveries
+  // A run that already failed must not block the next attempt for ten minutes: the
+  // reason it failed (no browser, no readable page, a dead key) is often fixed a
+  // moment later, and the user is looking at the screen waiting for progress. Only
+  // live runs, and successes, are reused for the longer window; a failure may be
+  // retried after a short pause so a broken state cannot hammer the search quota.
+  const recent = db.prepare(`SELECT id, status FROM discoveries
       WHERE workspace_id=? AND original_website_id=?
-        AND (status IN ('queued','running') OR created_at >= ?)
+        AND (status IN ('queued','running')
+             OR (status='completed' AND created_at >= ?)
+             OR (status='failed' AND created_at >= ?))
       ORDER BY created_at DESC LIMIT 1`)
-    .get(workspaceId, originalId, new Date(Date.now() - 10 * 60 * 1000).toISOString());
+    .get(workspaceId, originalId,
+      new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      new Date(Date.now() - 45 * 1000).toISOString());
   if (recent) return recent.id;
 
   const id = newId('dsc');
