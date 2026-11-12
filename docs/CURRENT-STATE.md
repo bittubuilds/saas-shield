@@ -533,6 +533,19 @@ re-fetched on every run. Covered by `tests/discover.test.js` ("re-crawls when th
 only stored page is an empty shell"), which reproduces the production state: it failed
 before the change and completes after it.
 
+## Surviving a sleep or a restart (2026-11-12)
+
+A host that stops the process mid-run (a free Render instance spinning down after
+15 idle minutes, a crash, a deploy) left any in-flight discovery at
+`status='running'` forever. Scans already had recovery (`src/scan-recovery.js`);
+discovery did not, so the progress screen would keep waiting on a job that no
+longer existed.
+
+`recoverStaleDiscoveries()` now closes `queued`/`running` rows older than the stale
+window with a readable reason, and the scheduler calls it next to scan recovery.
+Nothing is re-queued automatically, so recovery cannot double-spend search quota.
+Covered by `tests/discovery-recovery.test.js` (stale closes, fresh is untouched).
+
 ## Known gaps, in priority order
 
 1. **AI provider key missing on Render.** Set `GROQ_API_KEY` (or `AI_API_KEY`) in

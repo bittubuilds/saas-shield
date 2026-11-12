@@ -29,4 +29,22 @@ function recoverStaleScans({ olderThanMs, now = new Date() } = {}) {
   return { recovered, cutoff };
 }
 
-module.exports = { recoverStaleScans, INTERRUPTED };
+// Same failure mode for auto-discovery: Render (and any host) can stop the process
+// mid-run, leaving the row at 'running'. Nothing would ever pick it up again, and
+// the progress screen would wait on a job that no longer exists.
+const DISCOVERY_INTERRUPTED = 'The automatic discovery was interrupted before it finished (the server stopped mid-run). Run it again.';
+
+function recoverStaleDiscoveries({ olderThanMs, now = new Date() } = {}) {
+  const window_ = Number.isFinite(olderThanMs) ? olderThanMs : config.scan.staleAfterMs;
+  const cutoff = new Date(now.getTime() - window_).toISOString();
+  const res = db.prepare(`
+    UPDATE discoveries
+       SET status='failed', finished_at=?, updated_at=?, error=?
+     WHERE status IN ('queued','running')
+       AND COALESCE(started_at, created_at) < ?`).run(now.toISOString(), now.toISOString(), DISCOVERY_INTERRUPTED, cutoff);
+  const recovered = (res && res.changes) || 0;
+  if (recovered) console.warn(`[recovery] marked ${recovered} orphaned discovery job(s) as failed (cutoff ${cutoff})`);
+  return { recovered, cutoff };
+}
+
+module.exports = { recoverStaleScans, recoverStaleDiscoveries, INTERRUPTED, DISCOVERY_INTERRUPTED };

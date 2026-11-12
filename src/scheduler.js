@@ -17,7 +17,7 @@
 const db = require('./db/index');
 const config = require('./config');
 const monitor = require('./monitor');
-const { recoverStaleScans } = require('./scan-recovery');
+const { recoverStaleScans, recoverStaleDiscoveries } = require('./scan-recovery');
 const alerts = require('./alerts');
 const { newId, utcNow } = require('./util');
 
@@ -63,6 +63,7 @@ async function runTick(opts = {}) {
   const startedAt = Date.now();
   try {
     try { recoverStaleScans(); } catch (e) { console.error('[scheduler] scan recovery failed:', e.message); }
+    try { recoverStaleDiscoveries(); } catch (e) { console.error('[scheduler] discovery recovery failed:', e.message); }
 
     let monitorResult = null;
     let monitorError = null;
