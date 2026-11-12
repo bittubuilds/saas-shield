@@ -105,7 +105,7 @@ export default function Scanning() {
             <dt>Pages read</dt><dd>{state.pages ?? '—'}</dd>
             <dt>Pages compared</dt><dd>{state.pagesCompared ?? '—'}</dd>
             <dt>Findings</dt><dd>{state.findings ?? '—'}</dd>
-            {state.discovery && (<><dt>Discovery</dt><dd>{state.discovery.status}</dd></>)}
+            {state.discovery && (<><dt>Discovery</dt><dd>{state.discovery.status}{state.discovery.error ? <span className="muted"> - {state.discovery.error}</span> : null}</dd></>)}
           </dl>
 
           {state.done && !state.failed && !state.cancelled && !state.scanId && (

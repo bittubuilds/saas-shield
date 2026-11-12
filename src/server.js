@@ -94,6 +94,7 @@ app.get('/api/health', (req, res) => {
         return {
           render_pages: render.available(),
           render_enabled: render.enabled(),
+          render_probe: render.probeStatus(),
           search_provider: search.describe().provider,
           search_available: search.isSearchConfigured()
         };

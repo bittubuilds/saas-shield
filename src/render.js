@@ -25,6 +25,30 @@ function available() {
   return Boolean(playwright());
 }
 
+// Importing the module proves nothing: on a host without the system libraries the
+// browser is there and still cannot start. The probe launches it once, caches the
+// answer, and health reports the failure text, so "render: true" stops lying.
+let probeState = { status: 'pending', error: null, version: null };
+function probe() {
+  if (probeState.status !== 'pending') return probeState;
+  const pw = playwright();
+  if (!pw) { probeState = { status: 'unavailable', error: 'playwright not installed', version: null }; return probeState; }
+  probeState = { status: 'running', error: null, version: null };
+  pw.chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] })
+    .then(async (browser) => {
+      probeState = { status: 'ok', error: null, version: browser.version() };
+      await browser.close().catch(() => {});
+    })
+    .catch((e) => {
+      probeState = { status: 'failed', error: e.message, version: null };
+    });
+  return probeState;
+}
+
+function probeStatus() {
+  return probe() ;
+}
+
 // Tests and operators can switch this off; the default mirrors the crawl config.
 function enabled() {
   const raw = process.env.CRAWL_RENDER_THIN_PAGES;
@@ -74,4 +98,4 @@ async function renderHtml(url, { timeoutMs = 20000 } = {}) {
   }
 }
 
-module.exports = { renderHtml, available, enabled };
+module.exports = { renderHtml, available, enabled, probe, probeStatus };

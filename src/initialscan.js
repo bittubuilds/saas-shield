@@ -173,7 +173,7 @@ function status(workspaceId, siteId) {
     ? db.prepare('SELECT COUNT(*) AS n FROM results WHERE scan_id=?').get(scan.id).n
     : 0;
   const discovery = db.prepare(`
-    SELECT id, status FROM discoveries
+    SELECT id, status, error FROM discoveries
     WHERE workspace_id=? AND original_website_id=?
     ORDER BY created_at DESC LIMIT 1`).get(workspaceId, site.id);
   const competitorCount = db.prepare(`
@@ -194,7 +194,7 @@ function status(workspaceId, siteId) {
       available: competitorCount > 0,
       competitors_in_workspace: competitorCount
     },
-    discovery: discovery ? { id: discovery.id, status: discovery.status } : null,
+    discovery: discovery ? { id: discovery.id, status: discovery.status, error: discovery.error || null } : null,
     scan: scan ? {
       id: scan.id,
       status: scan.status,
