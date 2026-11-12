@@ -560,6 +560,18 @@ takes the decision again, and the atomic insert ignores empty completed rows. Co
 by `tests/empty-scan.test.js`: an empty scan is not done, a real scan still is, and an
 empty scan no longer blocks the next step.
 
+## Discovery had no budget (2026-11-12)
+
+Repeated discovery runs stacked work: every run added up to six comparison websites
+and six scans, and the progress screen retries discovery. A workspace could sit on
+dozens of comparisons with nothing visibly moving, which reads as frozen.
+
+`src/discover.js` now bounds it: at most 8 live auto-discovered comparisons per
+workspace and at most 3 queued/running scans before a run stops adding more. Existing
+sites are still reused, so a run is never wasted; candidates past the budget are
+skipped and counted in the audit entry. Covered by `tests/discover.test.js` (three
+runs over ten candidates stay within both limits).
+
 ## Known gaps, in priority order
 
 1. **AI provider key missing on Render.** Set `GROQ_API_KEY` (or `AI_API_KEY`) in

@@ -237,3 +237,33 @@ test('discovery re-crawls when the only stored page is an empty shell', async ()
     await new Promise((r) => srv.close(r));
   }
 });
+
+// The progress screen retries discovery, so runs repeat. Without a budget every run
+// added up to six more comparison sites and scans; one workspace ended up sitting on
+// dozens of comparisons with nothing visibly moving.
+test('repeated discovery runs respect the workspace budget', async () => {
+  await ready();
+  const c = client();
+  const wsId = await makeAccount(c);
+  const site = await c(`/workspaces/${wsId}/websites`, { method: 'POST', body: { url: 'http://127.0.0.1:1/', kind: 'original', auto_scan: false } });
+  const origId = site.data.website.id;
+  const orig = db.prepare('SELECT * FROM websites WHERE id=?').get(origId);
+  db.prepare(`INSERT INTO pages (id, website_id, workspace_id, url, submitted_url, canonical_url, title, text_content, meta_description, content_hash, http_status, fetched_at)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(newId('pg'), origId, wsId, 'http://127.0.0.1:1/', orig.submitted_url, null, 'Home',
+         'Our platform helps modern logistics teams coordinate warehouse operations across every facility in real time with predictive arrival windows.',
+         null, 'h1', 200, utcNow());
+
+  const hosts = Array.from({ length: 10 }, (_, i) => `https://copier-budget-${i}.test/page`);
+  for (let run = 0; run < 3; run++) {
+    const discoveryId = newId('dsc');
+    db.prepare(`INSERT INTO discoveries (id, workspace_id, original_website_id, status, created_by, created_at, updated_at)
+                VALUES (?,?,?, 'queued', ?, ?, ?)`).run(discoveryId, wsId, origId, null, utcNow(), utcNow());
+    await discover.runDiscovery(discoveryId, { searchFn: async () => hosts });
+  }
+
+  const comps = db.prepare(`SELECT COUNT(*) c FROM websites WHERE workspace_id=? AND kind='comparison'`).get(wsId).c;
+  assert.ok(comps <= 8, `auto-discovery must stay bounded, got ${comps}`);
+  const pending = db.prepare(`SELECT COUNT(*) c FROM scans WHERE workspace_id=? AND status='queued'`).get(wsId).c;
+  assert.ok(pending <= 3, `queued scans must stay bounded, got ${pending}`);
+});

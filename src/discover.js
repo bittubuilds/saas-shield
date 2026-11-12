@@ -20,6 +20,12 @@ const { parseHttpUrl, domainOf } = require('./ssrf');
 
 const MAX_QUERIES = 5;       // sentences searched per discovery run
 const MAX_SITES = 6;         // comparison sites registered per run
+// Repeated runs must not stack sites and scans until the queue looks frozen: the
+// progress screen retries discovery, and every run used to add up to six more
+// comparison websites and six more scans. Seen live as a workspace sitting on
+// dozens of comparisons with nothing visibly moving.
+const MAX_DISCOVERED_TOTAL = 8;   // auto-discovered comparisons alive per workspace
+const MAX_PENDING_SCANS = 3;      // queued/running scans before discovery stops adding
 const MIN_WORDS = 8;         // per search sentence
 const MIN_CHARS = 45;
 const MAX_CHARS = 180;
@@ -193,7 +199,16 @@ async function runDiscovery(discoveryId, opts = {}) {
     const sites = filterResultHosts(foundUrls, original.normalized_domain);
     let createdScans = 0;
     const registered = [];
+    const discoveredSoFar = db.prepare(
+      `SELECT COUNT(*) c FROM websites WHERE workspace_id=? AND kind='comparison' AND archived_at IS NULL AND label='Found by auto-discovery'`
+    ).get(d.workspace_id).c;
+    let siteBudget = Math.max(0, MAX_DISCOVERED_TOTAL - discoveredSoFar);
+    const pendingScans = db.prepare(
+      `SELECT COUNT(*) c FROM scans WHERE workspace_id=? AND status IN ('queued','running')`).get(d.workspace_id).c;
+    let scanBudget = Math.max(0, MAX_PENDING_SCANS - pendingScans);
+    let skipped = 0;
     for (const u of sites) {
+      if (siteBudget <= 0 || scanBudget <= 0) { skipped++; continue; }
       let host;
       try {
         const parsed = parseHttpUrl(u);   // SSRF guard, throws on unsafe URLs
@@ -205,6 +220,7 @@ async function runDiscovery(discoveryId, opts = {}) {
         .get(d.workspace_id, 'comparison', host);
       let siteId = existing ? existing.id : null;
       if (!siteId) {
+        siteBudget--;
         siteId = newId('web');
         db.prepare(`INSERT INTO websites (id, workspace_id, kind, submitted_url, normalized_domain, label, status, crawl_status, created_at, updated_at)
                     VALUES (?,?,?,?,?, 'Found by auto-discovery', 'pending', 'not_crawled', ?, ?)`)
@@ -220,6 +236,7 @@ async function runDiscovery(discoveryId, opts = {}) {
                   VALUES (?,?,?,?, 'queued', ?, ?, ?)`)
         .run(scanId, d.workspace_id, original.id, siteId, JSON.stringify(params), d.created_by || null, utcNow());
       scanner.enqueueScan(scanId);
+      scanBudget--;
       createdScans++;
       registered.push({ url: u, site_id: siteId, scan_id: scanId, already: false, rank });
     }
@@ -256,7 +273,7 @@ async function runDiscovery(discoveryId, opts = {}) {
         createdScans,
         utcNow(), utcNow(), discoveryId
       );
-    audit(d.workspace_id, null, 'discovery.completed', { discoveryId, queries: queriesUsed.length, sites: registered.length });
+    audit(d.workspace_id, null, 'discovery.completed', { discoveryId, queries: queriesUsed.length, sites: registered.length, skipped });
   } catch (e) {
     const msg = e.code === 'SEARCH_UNAVAILABLE'
       ? e.message
