@@ -41,8 +41,36 @@ function probe() {
     })
     .catch((e) => {
       probeState = { status: 'failed', error: e.message, version: null };
+      // The browser can be missing even though the module is installed (the build
+      // step is not guaranteed to have run). Fetch it once, in the background, then
+      // probe again so health and the crawler stop reporting a capability we lack.
+      if (/Executable doesn't exist|Executable doesn\'t exist/i.test(e.message || '')) installOnce();
     });
   return probeState;
+}
+
+let installStarted = false;
+function installOnce() {
+  if (installStarted) return;
+  installStarted = true;
+  const { spawn } = require('child_process');
+  console.warn('[render] browser missing; installing chromium in the background');
+  try {
+    const child = spawn('npx', ['playwright', 'install', 'chromium'], { stdio: 'ignore', env: process.env, detached: false });
+    child.on('close', (code) => {
+      console.warn(`[render] browser install finished with code ${code}`);
+      installStarted = false;
+      probeState = { status: 'pending', error: null, version: null };
+      probe();
+    });
+    child.on('error', (e) => {
+      installStarted = false;
+      console.warn('[render] browser install could not start:', e.message);
+    });
+  } catch (e) {
+    installStarted = false;
+    console.warn('[render] browser install failed:', e.message);
+  }
 }
 
 function probeStatus() {
