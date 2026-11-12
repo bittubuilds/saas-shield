@@ -546,6 +546,20 @@ window with a readable reason, and the scheduler calls it next to scan recovery.
 Nothing is re-queued automatically, so recovery cannot double-spend search quota.
 Covered by `tests/discovery-recovery.test.js` (stale closes, fresh is untouched).
 
+## An empty scan reported itself as finished (2026-11-12)
+
+The screen stayed at 0% after the discovery fix, because the payload still said the
+work was over. `status()` set `done` for any `completed` scan, even one that compared
+zero pages, and the self-healing poll only acted while `!done`. Two guards in
+`src/initialscan.js` also counted that empty scan as the workspace's scan, so
+`queueScan` refused to create a new one.
+
+Now a `completed` scan counts only if it compared at least one page (or produced a
+finding). An empty one is reported with `empty_scan: true` and `done: false`, the poll
+takes the decision again, and the atomic insert ignores empty completed rows. Covered
+by `tests/empty-scan.test.js`: an empty scan is not done, a real scan still is, and an
+empty scan no longer blocks the next step.
+
 ## Known gaps, in priority order
 
 1. **AI provider key missing on Render.** Set `GROQ_API_KEY` (or `AI_API_KEY`) in

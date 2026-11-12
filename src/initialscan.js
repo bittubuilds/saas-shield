@@ -42,7 +42,8 @@ function queueScan(workspaceId, originalId, comparisonId, userId) {
     WHERE NOT EXISTS (
       SELECT 1 FROM scans
       WHERE workspace_id=? AND (original_website_id=? OR comparison_website_id=?)
-        AND status IN ('queued','running','completed')
+        AND (status IN ('queued','running')
+             OR (status='completed' AND COALESCE(pages_compared,0) > 0))
     )`).run(id, workspaceId, originalId, comparisonId, params, userId, now,
     workspaceId, originalId, originalId);
   if (!res || res.changes < 1) return null;
@@ -205,7 +206,14 @@ function status(workspaceId, siteId) {
       finished_at: scan.finished_at || null
     } : null,
     findings_total: findings,
-    done: !!(scan && (scan.status === 'completed' || scan.status === 'failed' || scan.status === 'cancelled'))
+    // A completed scan that compared no pages is not an answer: nothing was
+    // examined. Reporting it as done is what left the screen frozen at 0% with no
+    // way forward, because the self-healing poll only acts when nothing is done.
+    empty_scan: !!(scan && scan.status === 'completed' && !(Number(scan.pages_compared || 0) > 0) && !(Number(scan.findings || 0) > 0)),
+    done: !!(scan && (
+      scan.status === 'failed' || scan.status === 'cancelled' ||
+      (scan.status === 'completed' && (Number(scan.pages_compared || 0) > 0 || Number(scan.findings || 0) > 0))
+    ))
   };
 }
 
