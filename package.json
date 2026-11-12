@@ -18,7 +18,7 @@
     "db:copy": "node tools/db-copy-sqlite-to-pg.js",
     "test:screenshots": "node --test tests/screenshots.test.js",
     "screenshots:install": "playwright install chromium",
-    "postinstall": "node tools/build-frontend.js && (npx playwright install chromium --with-deps || npx playwright install chromium || true)"
+    "postinstall": "node tools/build-frontend.js && (npx playwright install chromium || true)"
   },
   "engines": {
     "node": ">=22.5.0"

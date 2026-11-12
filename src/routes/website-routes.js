@@ -79,10 +79,21 @@ router.post('/workspaces/:workspaceId/websites', requireWorkspace(), rateLimit({
     db.prepare('UPDATE websites SET archived_at=NULL, status=?, submitted_url=?, label=?, updated_at=? WHERE id=?')
       .run('active', parsed.submittedUrl, label || archivedSame.label || null, utcNow(), archivedSame.id);
     audit(req.workspace.id, req.user.id, 'website.restored', { id: archivedSame.id, url: parsed.submittedUrl });
+    // A restored site should behave like a new one: its old pages may be empty
+    // shells, so run the same initial-scan decision instead of leaving the user
+    // on a scan screen that can never progress.
+    let initial = { mode: 'restored', started: false };
+    if (req.body && req.body.auto_scan !== false) {
+      try {
+        initial = initialScan.start({ workspaceId: req.workspace.id, siteId: archivedSame.id, userId: req.user.id });
+      } catch (e) {
+        initial = { mode: 'error', started: false, message: 'The automatic scan could not be started.' };
+      }
+    }
     return res.status(200).json({
       website: serializeSite(db.prepare('SELECT * FROM websites WHERE id=?').get(archivedSame.id)),
       restored: true,
-      initial_scan: { mode: 'restored', started: false }
+      initial_scan: initial
     });
   }
 

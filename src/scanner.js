@@ -48,7 +48,14 @@ async function runScan(scanId) {
     const shouldCrawl = (site) => {
       if (params.recrawl === true) return true;
       const rows = db.prepare('SELECT COUNT(*) c FROM pages WHERE website_id=?').get(site.id);
-      return rows.c === 0;
+      if (rows.c === 0) return true;
+      // A stored page with no readable text was a JavaScript shell, not a page.
+      // Crawling again (now that thin pages are rendered) is the only way a retry
+      // can produce something to compare; before this, a retry compared nothing.
+      const readable = db.prepare(
+        `SELECT COUNT(*) c FROM pages WHERE website_id=? AND LENGTH(TRIM(COALESCE(text_content,''))) >= 200`
+      ).get(site.id);
+      return readable.c === 0;
     };
     const crawlOpts = { maxPages: params.maxPages, maxDepth: params.maxDepth };
 
