@@ -136,8 +136,23 @@ router.post('/workspaces/:workspaceId/websites', requireWorkspace(), rateLimit({
 // Live status of the one-time initial scan for a website. Every field is read
 // back from what the jobs actually wrote - pages, scans, results.
 router.get('/workspaces/:workspaceId/websites/:id/initial-scan', requireWorkspace(), (req, res) => {
-  const out = initialScan.status(req.workspace.id, req.params.id);
+  let out = initialScan.status(req.workspace.id, req.params.id);
   if (!out) return res.status(404).json({ error: 'Website not found.' });
+
+  // Self-healing poll. A workspace can sit on "needs a comparison site" for
+  // reasons the user cannot fix from this screen: the website was added before
+  // rendering or search worked, so nothing was ever started. When nothing is
+  // running and no comparison exists, take the decision again - initialScan.start()
+  // is guarded, so repeated polls cannot stack scans or discovery jobs.
+  const idle = !out.scan && !out.discovery && !(out.comparison && out.comparison.available) && !out.done;
+  if (idle && req.query.auto !== '0') {
+    try {
+      const started = initialScan.start({ workspaceId: req.workspace.id, siteId: req.params.id, userId: req.user.id });
+      if (started && started.started) out = initialScan.status(req.workspace.id, req.params.id) || out;
+    } catch (e) {
+      console.error('[initial-scan] automatic start failed:', e.message);
+    }
+  }
   res.json(out);
 });
 

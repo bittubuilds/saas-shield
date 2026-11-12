@@ -51,6 +51,16 @@ function queueScan(workspaceId, originalId, comparisonId, userId) {
 }
 
 function queueDiscovery(workspaceId, originalId, userId) {
+  // The progress screen polls, and this decision runs on every poll. Reuse a live
+  // attempt, or one from the last ten minutes, so a page refresh cannot stack
+  // discovery jobs against the same search quota.
+  const recent = db.prepare(`SELECT id FROM discoveries
+      WHERE workspace_id=? AND original_website_id=?
+        AND (status IN ('queued','running') OR created_at >= ?)
+      ORDER BY created_at DESC LIMIT 1`)
+    .get(workspaceId, originalId, new Date(Date.now() - 10 * 60 * 1000).toISOString());
+  if (recent) return recent.id;
+
   const id = newId('dsc');
   const now = utcNow();
   db.prepare(`INSERT INTO discoveries (id, workspace_id, original_website_id, status, created_by, created_at, updated_at)
@@ -90,10 +100,14 @@ function start({ workspaceId, siteId, userId }) {
   // scan must not burn the free scan, otherwise one bad competitor URL would lock
   // the user out of their own website forever.
   const priorScan = db.prepare(`
-    SELECT id, status FROM scans
+    SELECT id, status, pages_compared FROM scans
     WHERE workspace_id=? AND (original_website_id=? OR comparison_website_id=?)
       AND status IN ('queued','running','completed')
-    ORDER BY created_at ASC LIMIT 1`).get(workspaceId, original.id, original.id);
+    ORDER BY created_at ASC`).all(workspaceId, original.id, original.id)
+    // A scan that finished having compared zero pages is evidence of a broken
+    // crawl, not of original copy: it must not count as the website's scan, or the
+    // workspace stays stuck on a result that proves nothing.
+    .find((row) => row.status !== 'completed' || Number(row.pages_compared || 0) > 0);
   if (priorScan) {
     return {
       mode: 'already_scanned', started: false, scan_id: priorScan.id,
