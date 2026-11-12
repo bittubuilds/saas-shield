@@ -48,3 +48,30 @@ test('scan recovery still works alongside it', () => {
   const r = recoverStaleScans({ olderThanMs: 10 * 60 * 1000 });
   assert.equal(typeof r.recovered, 'number');
 });
+
+// A restart loses the in-memory queue while rows still say 'queued'. Resuming must
+// hand back only never-started rows, so nothing can run twice.
+test('queued rows that never started are handed back to the queue after a restart', () => {
+  const { resumeQueuedWork } = require('../src/scan-recovery');
+  const queuedScan = newId('scn'), startedScan = newId('scn');
+  const ws = newId('wsp'), uid = newId('usr'), a = newId('web'), b = newId('web'), now = utcNow();
+  db.prepare('INSERT INTO users (id,email,password_hash,name,created_at) VALUES (?,?,?,?,?)').run(uid, `${uid}@x.test`, 'x', 'x', now);
+  db.prepare('INSERT INTO workspaces (id,name,created_at) VALUES (?,?,?)').run(ws, 'W', now);
+  for (const [id, kind, dom] of [[a, 'original', 'a.test'], [b, 'comparison', 'b.test']]) {
+    db.prepare(`INSERT INTO websites (id,workspace_id,kind,submitted_url,normalized_domain,status,crawl_status,created_at,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?)`).run(id, ws, kind, `https://${dom}/`, dom, 'active', 'crawled', now, now);
+  }
+  db.prepare(`INSERT INTO scans (id,workspace_id,original_website_id,comparison_website_id,status,params,created_by,created_at)
+              VALUES (?,?,?,?,?,?,?,?)`).run(queuedScan, ws, a, b, 'queued', '{}', uid, now);
+  db.prepare(`INSERT INTO scans (id,workspace_id,original_website_id,comparison_website_id,status,params,created_by,created_at,started_at)
+              VALUES (?,?,?,?,?,?,?,?,?)`).run(startedScan, ws, a, b, 'queued', '{}', uid, now, now);
+
+  const enqueued = [];
+  const out = resumeQueuedWork({
+    scanner: { isRunning: () => false, enqueueScan: (id) => enqueued.push(id) },
+    discover: { enqueueDiscovery: () => {} }
+  });
+  assert.ok(enqueued.includes(queuedScan), 'a never-started scan is resumed');
+  assert.ok(!enqueued.includes(startedScan), 'a scan that had already started is not re-run');
+  assert.ok(out.scans >= 1);
+});

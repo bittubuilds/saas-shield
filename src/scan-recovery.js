@@ -47,4 +47,33 @@ function recoverStaleDiscoveries({ olderThanMs, now = new Date() } = {}) {
   return { recovered, cutoff };
 }
 
-module.exports = { recoverStaleScans, recoverStaleDiscoveries, INTERRUPTED, DISCOVERY_INTERRUPTED };
+// Scans and discoveries run from an in-memory queue (setImmediate), so a restart
+// loses the job while the database row still says 'queued'. Waiting out the stale
+// window left the screen on "queued" for fifteen minutes after every deploy. A row
+// that was never started is safe to hand back to the queue: nothing ran, so nothing
+// can run twice. Rows already 'running' are NOT resumed (a crawl half-done is not
+// restartable); the stale window still fails those with a readable reason.
+function resumeQueuedWork({ scanner, discover } = {}) {
+  const out = { scans: 0, discoveries: 0 };
+  try {
+    const sc = scanner || require('./scanner');
+    const rows = db.prepare(`SELECT id FROM scans WHERE status='queued' AND started_at IS NULL ORDER BY created_at ASC LIMIT 20`).all();
+    for (const r of rows) {
+      if (sc.isRunning && sc.isRunning(r.id)) continue;
+      sc.enqueueScan(r.id);
+      out.scans++;
+    }
+  } catch (e) { console.error('[recovery] could not resume queued scans:', e.message); }
+  try {
+    const dc = discover || require('./discover');
+    const rows = db.prepare(`SELECT id FROM discoveries WHERE status='queued' AND started_at IS NULL ORDER BY created_at ASC LIMIT 20`).all();
+    for (const r of rows) {
+      dc.enqueueDiscovery(r.id);
+      out.discoveries++;
+    }
+  } catch (e) { console.error('[recovery] could not resume queued discoveries:', e.message); }
+  if (out.scans || out.discoveries) console.warn(`[recovery] resumed ${out.scans} queued scan(s) and ${out.discoveries} queued discovery job(s) after a restart`);
+  return out;
+}
+
+module.exports = { recoverStaleScans, recoverStaleDiscoveries, resumeQueuedWork, INTERRUPTED, DISCOVERY_INTERRUPTED };

@@ -572,6 +572,20 @@ sites are still reused, so a run is never wasted; candidates past the budget are
 skipped and counted in the audit entry. Covered by `tests/discover.test.js` (three
 runs over ten candidates stay within both limits).
 
+## Queued work lost on restart (2026-11-12)
+
+Scans and discoveries run from an in-memory queue (`setImmediate`). A deploy, a
+restart or the browser-install reboot loses those jobs while the database row still
+says `queued`. The progress screen then showed `Status: queued` with nothing behind it,
+and the stale window only failed the row after fifteen minutes. Seen in a screen
+recording right after discovery reported `completed`.
+
+`resumeQueuedWork()` (src/scan-recovery.js) runs at boot and hands every never-started
+`queued` scan or discovery back to the queue. Only rows with no `started_at` are
+resumed, so nothing can run twice; rows already `running` are left to the stale-window
+recovery because a half-finished crawl is not restartable. Covered by
+`tests/discovery-recovery.test.js`.
+
 ## Known gaps, in priority order
 
 1. **AI provider key missing on Render.** Set `GROQ_API_KEY` (or `AI_API_KEY`) in

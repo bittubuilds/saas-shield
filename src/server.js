@@ -195,6 +195,13 @@ if (config.scheduler.enabled && config.nodeEnv !== 'test') {
   scheduler.start();
 }
 
+// Hand work that was queued but never started back to the in-memory queue. A deploy
+// or restart loses those jobs while their rows still say 'queued'.
+if (config.nodeEnv !== 'test') {
+  try { require('./scan-recovery').resumeQueuedWork(); }
+  catch (e) { console.error('[boot] could not resume queued work:', e.message); }
+}
+
 let shuttingDown = false;
 function shutdown(signal) {
   if (shuttingDown) return;
