@@ -140,8 +140,15 @@ async function runDiscovery(discoveryId, opts = {}) {
 
     // 1. Make sure we have the original's content.
     const job = { cancelRequested: false };
-    const pageRows = db.prepare('SELECT COUNT(*) c FROM pages WHERE website_id=?').get(original.id);
-    if (pageRows.c === 0) {
+    // Crawl when nothing is stored, and also when everything stored is an empty
+    // shell (a JavaScript challenge page). Counting rows alone made discovery trust
+    // that stale page forever and fail with "no readable content" on a site that is
+    // perfectly readable now.
+    const stored = db.prepare('SELECT text_content FROM pages WHERE website_id=?').all(original.id);
+    // "Empty shell" means no page has a usable sentence, not "no page is long":
+    // a short landing page is a real page and must not be re-fetched every run.
+    const hasReadable = stored.some((p) => String(p.text_content || '').trim().split(/\s+/).filter(Boolean).length >= 15);
+    if (stored.length === 0 || !hasReadable) {
       await scanner.crawlAndStore(original, { maxPages: 10, maxDepth: 1 }, job);
     }
     const pages = scanner.contentUniquePages(original.id);

@@ -198,3 +198,42 @@ test('runDiscovery with a stubbed search registers comparison sites and queues s
   assert.equal(scans[0].comparison_website_id, comps[0].id);
   assert.equal(JSON.parse(scans[0].params).discovered, true);
 });
+
+// Regression: a JavaScript-challenge page stored as an empty document made
+// discovery trust the stale row forever and fail with "no readable content" on a
+// site that had become readable. Discovery must crawl again when every stored page
+// is empty, exactly as the scanner does.
+test('discovery re-crawls when the only stored page is an empty shell', async () => {
+  await ready();
+  const READABLE = pg('Home', `<h1>Studio</h1><p>${'Our photography retainer includes two shoot days every month and a licensed image library for the whole team. '.repeat(6)}</p>`);
+  const srv = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/html' }); res.end(READABLE); });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  try {
+    const port = srv.address().port;
+    const c = client();
+    const wsId = await makeAccount(c);
+    const site = await c(`/workspaces/${wsId}/websites`, { method: 'POST', body: { url: `http://127.0.0.1:${port}/`, kind: 'original', auto_scan: false } });
+    const origId = site.data.website.id;
+    const orig = db.prepare('SELECT * FROM websites WHERE id=?').get(origId);
+
+    // The stale state seen in production: one stored page, no text.
+    db.prepare(`INSERT INTO pages (id, website_id, workspace_id, url, submitted_url, canonical_url, title, text_content, meta_description, content_hash, http_status, fetched_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(newId('pg'), origId, wsId, `http://127.0.0.1:${port}/`, orig.submitted_url, null, '', '', null, 'hshell', 200, utcNow());
+
+    const discoveryId = newId('dsc');
+    db.prepare(`INSERT INTO discoveries (id, workspace_id, original_website_id, status, created_by, created_at, updated_at)
+                VALUES (?,?,?, 'queued', ?, ?, ?)`).run(discoveryId, wsId, origId, null, utcNow(), utcNow());
+
+    const searched = [];
+    await discover.runDiscovery(discoveryId, { searchFn: async (q) => { searched.push(q); return ['https://copier-two.test/page']; } });
+
+    const d = db.prepare('SELECT * FROM discoveries WHERE id=?').get(discoveryId);
+    assert.equal(d.status, 'completed', `discovery failed: ${d.error}`);
+    assert.ok(searched.length >= 1, 'it found sentences to search for after re-crawling');
+    const readable = db.prepare(`SELECT COUNT(*) c FROM pages WHERE website_id=? AND LENGTH(TRIM(text_content)) >= 200`).get(origId).c;
+    assert.ok(readable >= 1, 'the shell page was replaced by readable text');
+  } finally {
+    await new Promise((r) => srv.close(r));
+  }
+});

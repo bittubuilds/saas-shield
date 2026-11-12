@@ -515,6 +515,24 @@ forced with `CRAWL_RENDER_THIN_PAGES=1`, off with `0`. Tests inject a renderer i
 of launching a browser. Verified on the real site: 0 → 1879 characters of readable
 text after the fallback.
 
+## Discovery trusted a stale empty page (2026-11-12)
+
+Seen in a screen recording of the live app: the scan screen showed
+`Discovery: failed`, `Pages read: 1`, `Pages compared: -`. Serper and the render
+fallback were both live, so the failure was in discovery itself.
+
+`runDiscovery` only crawled the original when it had no stored pages
+(`COUNT(*) = 0`). The site had one stored page left over from before the render
+fallback existed: an empty JavaScript-challenge shell. Discovery counted that row,
+skipped the crawl, found no sentence to search and failed with "no distinctive text".
+The scanner had already been fixed to re-crawl in this situation; discovery was missed.
+
+Fix: discovery now also re-crawls when no stored page holds a usable sentence (15 or
+more words). Words rather than characters, so a short but real landing page is never
+re-fetched on every run. Covered by `tests/discover.test.js` ("re-crawls when the
+only stored page is an empty shell"), which reproduces the production state: it failed
+before the change and completes after it.
+
 ## Known gaps, in priority order
 
 1. **AI provider key missing on Render.** Set `GROQ_API_KEY` (or `AI_API_KEY`) in
