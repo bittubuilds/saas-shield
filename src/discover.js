@@ -147,6 +147,49 @@ function trimAutoDiscovered(workspaceId, keep = MAX_DISCOVERED_TOTAL) {
   return { archived, kept: rows.length - archived };
 }
 
+// Turn the site's own words into the queries that actually find other sites.
+//
+// A long sentence in quotes asks Google for that exact string, so it only ever
+// matches a page that copied it word for word. Real copy is usually looser, and a
+// competitor is a site with the same subject, not the same sentence. So each
+// sentence is searched twice: quoted (catches verbatim copying) and unquoted (finds
+// sites competing for the same wording, which is what "find my competitors" means).
+// Title and description are added when the page has little text to work with.
+const QUOTED_MAX_WORDS = 12;
+const PLAIN_MAX_WORDS = 10;
+
+function trimWords(text, maxWords) {
+  const words = String(text || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  return words.slice(0, maxWords).join(' ');
+}
+
+function buildSearchQueries(pages, sentences) {
+  const out = [];
+  const push = (q) => {
+    const clean = String(q || '').replace(/"/g, '').replace(/\s+/g, ' ').trim();
+    if (clean.split(' ').filter(Boolean).length < 3) return;
+    if (out.some((x) => x.toLowerCase() === clean.toLowerCase())) return;
+    out.push(clean);
+  };
+
+  for (const s of sentences) {
+    push(trimWords(s, PLAIN_MAX_WORDS));            // unquoted: same subject
+    if (out.length >= MAX_QUERIES) break;
+    push(`"${trimWords(s, QUOTED_MAX_WORDS)}"`);    // quoted: exact copying
+    if (out.length >= MAX_QUERIES) break;
+  }
+
+  if (out.length < MAX_QUERIES) {
+    for (const p of pages) {
+      const meta = p.meta_description || p.title;
+      if (meta) push(trimWords(meta, PLAIN_MAX_WORDS));
+      if (out.length >= MAX_QUERIES) break;
+    }
+  }
+
+  return out.slice(0, MAX_QUERIES);
+}
+
 function filterResultHosts(urls, ownDomain) {
   const out = [];
   const seen = new Set();
@@ -218,9 +261,9 @@ async function runDiscovery(discoveryId, opts = {}) {
     // carried from the search response into the competitor, not dropped here.
     const rankOf = new Map();
     const queriesUsed = [];
-    for (const s of sentences) {
+    const queries = buildSearchQueries(pages, sentences);
+    for (const q of queries) {
       if (foundUrls.length >= MAX_SITES * 3) break;
-      const q = `"${s.replace(/"/g, '')}"`;
       let urls = [];
       try {
         urls = await searchFn(q, { num: 10 });
@@ -347,7 +390,7 @@ async function runDiscovery(discoveryId, opts = {}) {
       nothingFoundReason = null;   // work was queued for sites found earlier
     } else if (registered.length === 0) {
       nothingFoundReason = foundUrls.length === 0
-        ? `Search returned no results for ${queriesUsed.length} quoted sentence(s) from your site. Your wording may not appear anywhere else yet.`
+        ? `Search returned no results for ${queriesUsed.length} query(s) built from your site's own wording, quoted and unquoted. Search may be rate limited, or the key may be out of credits.`
         : `Search returned ${foundUrls.length} link(s), but all were your own site, a large platform, or an unsafe address, so none were kept.`;
     } else if (createdScans === 0) {
       nothingFoundReason = siteBudget <= 0
@@ -384,6 +427,6 @@ function enqueueDiscovery(id) {
 module.exports = {
   runDiscovery, enqueueDiscovery, isRunning,
   splitSentences, pickSearchSentences, filterResultHosts, isBlockedHost,
-  trimAutoDiscovered,
+  buildSearchQueries, trimAutoDiscovered,
   MAX_QUERIES, MAX_SITES, MAX_DISCOVERED_TOTAL, MAX_PENDING_SCANS
 };

@@ -413,3 +413,47 @@ test('the poll stops starting scans after three automatic attempts in an hour', 
   const after = db.prepare('SELECT COUNT(*) c FROM scans WHERE workspace_id=?').get(wsId).c;
   assert.equal(after, before, 'no fourth automatic scan is created');
 });
+
+// A long quoted sentence only matches word-for-word copies, so a site whose text is
+// original got zero results and no competitors at all. The same words unquoted find
+// the sites competing for that subject.
+test('queries include an unquoted subject search next to the quoted one', () => {
+  const pages = [{
+    title: 'Bittu Builds - Website Design',
+    meta_description: 'Website design and automation for small businesses',
+    text_content: 'Bittu Builds. Website design and automation. Good work should feel easy. Discuss your website.'
+  }];
+  const sentences = discover.pickSearchSentences(pages, []);
+  const queries = discover.buildSearchQueries(pages, sentences);
+  assert.ok(queries.length >= 2, `expected several queries, got ${JSON.stringify(queries)}`);
+  assert.ok(queries.some((q) => !q.startsWith('"')), 'an unquoted subject query is included');
+  assert.ok(queries.length <= discover.MAX_QUERIES, 'the query budget is respected');
+  assert.equal(new Set(queries.map((q) => q.toLowerCase())).size, queries.length, 'no duplicate queries');
+});
+
+// "Discovery: completed - search returned no results" used to freeze the screen: the
+// poll saw a discovery row and refused to take the decision again, so nothing ever ran.
+test('a finished discovery does not block the next attempt', async () => {
+  await ready();
+  const c = client();
+  const wsId = await makeAccount(c);
+  const site = await c(`/workspaces/${wsId}/websites`, { method: 'POST', body: { url: 'http://127.0.0.1:1/', kind: 'original', auto_scan: false } });
+  const origId = site.data.website.id;
+  const old = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+  const first = newId('dsc');
+  db.prepare(`INSERT INTO discoveries (id, workspace_id, original_website_id, status, created_by, created_at, updated_at, finished_at)
+              VALUES (?,?,?, 'completed', ?, ?, ?, ?)`).run(first, wsId, origId, null, old, old, old);
+
+  // Discovery only runs when a search provider is configured; the suite removes the
+  // key by default, so set one for this case and restore it afterwards.
+  process.env.SERPER_API_KEY = 'test-key';
+  try {
+    const res = await c(`/workspaces/${wsId}/websites/${origId}/initial-scan`);
+    assert.equal(res.status, 200);
+    const rows = db.prepare('SELECT id FROM discoveries WHERE workspace_id=?').all(wsId);
+    assert.equal(rows.length, 2, 'a fresh attempt is queued after the reuse window');
+    assert.ok(rows.some((r) => r.id !== first));
+  } finally {
+    delete process.env.SERPER_API_KEY;
+  }
+});

@@ -168,7 +168,10 @@ router.get('/workspaces/:workspaceId/websites/:id/initial-scan', requireWorkspac
   const recentScans = db.prepare(
     `SELECT COUNT(*) c FROM scans WHERE workspace_id=? AND original_website_id=? AND created_at >= ?`
   ).get(req.workspace.id, req.params.id, new Date(Date.now() - 60 * 60 * 1000).toISOString()).c;
-  const idle = !activeScan && !out.discovery && !out.done && recentScans < 3;
+  // Only live work blocks the poll. A discovery that finished without finding anything
+  // used to block it forever: the screen said "no results" and nothing ever tried again.
+  const activeDiscovery = !!(out.discovery && (out.discovery.status === 'queued' || out.discovery.status === 'running'));
+  const idle = !activeScan && !activeDiscovery && !out.done && recentScans < 3;
   if (idle && req.query.auto !== '0') {
     try {
       const started = initialScan.start({ workspaceId: req.workspace.id, siteId: req.params.id, userId: req.user.id });

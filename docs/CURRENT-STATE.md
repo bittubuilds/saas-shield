@@ -623,6 +623,27 @@ When the cap genuinely is reached the row now says so in words ("already tracks 
 auto-discovered sites... remove one"). Covered by four new cases in
 `tests/discover.test.js`.
 
+## Only exact quotes were searched (2026-11-14)
+
+Live: `Discovery: completed - Search returned no results for 1 quoted sentence(s) from
+your site. Your wording may not appear anywhere else yet.` Two separate problems.
+
+Only one query was built, because the picker returns at most one sentence per page and
+only one page had qualifying text. And that one query was the sentence in quotes, which
+asks Google for that exact string: it can only ever match a word-for-word copy. A site
+whose text is original therefore found nothing, every time, which makes the discovery
+step useless for finding competitors.
+
+`buildSearchQueries()` now builds up to `MAX_QUERIES` queries: each chosen sentence is
+searched unquoted first (same subject, finds sites competing for it) and quoted second
+(max 12 words, catches verbatim copying), with the page title and description added when
+the site has little text. Duplicates are dropped and the budget is unchanged at five
+queries per run.
+
+Also: a discovery that finished without a result used to block the poll forever, because
+`idle` required no discovery row at all. Only a live (queued/running) discovery blocks it
+now, so a run with no results is retried after the reuse window.
+
 ## Known gaps, in priority order
 
 1. **AI provider key missing on Render.** Set `GROQ_API_KEY` (or `AI_API_KEY`) in
