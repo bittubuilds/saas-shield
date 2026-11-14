@@ -600,6 +600,29 @@ running); the initial-scan payload carries `worker` (true only if this process h
 scan) and `started_at`; a `queued` scan with no worker is handed back to the queue by the
 poll itself, not only at boot. Covered in `tests/discover.test.js`.
 
+## The discovery cap locked itself shut (2026-11-14)
+
+The caps added on 12 Nov had no way back. Earlier builds added up to six auto-discovered
+comparison sites per run, so a workspace could carry dozens; `siteBudget` was then
+`8 - 36 = 0` on every later run, and discovery completed having added nothing, with no
+scan created. The progress screen showed `Discovery: completed`, `Pages compared: -`,
+which is exactly the recording from 22:47.
+
+Three fixes, all in `src/discover.js` and the initial-scan poll:
+
+- `trimAutoDiscovered()` archives auto-discovered sites past the cap before the budget is
+  computed, preferring to keep the ones whose scans produced findings. It never archives a
+  site a scan is using, and archiving keeps its pages, findings and reports.
+- A discovered site that never got a scan (the state a restart leaves) is handed its scan
+  at the start of the next run, inside the same scan budget.
+- The poll starts a scan whenever nothing is actively running, instead of requiring that
+  no comparison existed at all. After three automatic attempts in an hour it stops, so a
+  comparison that cannot be crawled is not retried forever.
+
+When the cap genuinely is reached the row now says so in words ("already tracks 8
+auto-discovered sites... remove one"). Covered by four new cases in
+`tests/discover.test.js`.
+
 ## Known gaps, in priority order
 
 1. **AI provider key missing on Render.** Set `GROQ_API_KEY` (or `AI_API_KEY`) in

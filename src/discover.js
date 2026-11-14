@@ -119,6 +119,34 @@ function sameSite(host, ownDomain) {
 
 // Dedupe by host, drop the original's own domain and blocked platforms,
 // keep only valid http(s) URLs, cap at MAX_SITES.
+// Auto-discovery caps only work if old rows cannot lock them shut. Earlier builds
+// added up to six sites per run, so a workspace could carry dozens and then sit at a
+// budget of zero forever: every run "completed" without adding anything, which is
+// exactly what the progress screen showed.
+function trimAutoDiscovered(workspaceId, keep = MAX_DISCOVERED_TOTAL) {
+  const rows = db.prepare(`
+    SELECT w.id,
+           (SELECT COUNT(*) FROM scans s
+             WHERE s.workspace_id=w.workspace_id AND s.comparison_website_id=w.id
+               AND s.status IN ('queued','running')) AS active,
+           (SELECT COALESCE(SUM(s.findings),0) FROM scans s
+             WHERE s.workspace_id=w.workspace_id AND s.comparison_website_id=w.id) AS findings
+      FROM websites w
+     WHERE w.workspace_id=? AND w.kind='comparison' AND w.archived_at IS NULL
+       AND w.label='Found by auto-discovery'
+     ORDER BY findings DESC, w.created_at ASC`).all(workspaceId);
+  if (rows.length <= keep) return { archived: 0, kept: rows.length };
+  let archived = 0;
+  for (const row of rows.slice(keep)) {
+    if (Number(row.active) > 0) continue;   // never archive something a scan is using
+    db.prepare('UPDATE websites SET archived_at=?, updated_at=? WHERE id=?')
+      .run(utcNow(), utcNow(), row.id);
+    archived++;
+  }
+  if (archived) console.warn(`[discover] archived ${archived} extra auto-discovered site(s) to respect the ${keep} cap`);
+  return { archived, kept: rows.length - archived };
+}
+
 function filterResultHosts(urls, ownDomain) {
   const out = [];
   const seen = new Set();
@@ -215,6 +243,9 @@ async function runDiscovery(discoveryId, opts = {}) {
     const sites = filterResultHosts(foundUrls, original.normalized_domain);
     let createdScans = 0;
     const registered = [];
+
+    // Old rows must not be able to lock the caps shut.
+    const trimmed = trimAutoDiscovered(d.workspace_id);
     const discoveredSoFar = db.prepare(
       `SELECT COUNT(*) c FROM websites WHERE workspace_id=? AND kind='comparison' AND archived_at IS NULL AND label='Found by auto-discovery'`
     ).get(d.workspace_id).c;
@@ -222,6 +253,34 @@ async function runDiscovery(discoveryId, opts = {}) {
     const pendingScans = db.prepare(
       `SELECT COUNT(*) c FROM scans WHERE workspace_id=? AND status IN ('queued','running')`).get(d.workspace_id).c;
     let scanBudget = Math.max(0, MAX_PENDING_SCANS - pendingScans);
+
+    // A discovered site that never got a scan consumes the budget and produces
+    // nothing. Hand those their scan first, inside the same budget.
+    let healedScans = 0;
+    if (scanBudget > 0) {
+      const orphans = db.prepare(`
+        SELECT w.id FROM websites w
+         WHERE w.workspace_id=? AND w.kind='comparison' AND w.archived_at IS NULL
+           AND w.normalized_domain != ?
+           AND NOT EXISTS (SELECT 1 FROM scans s
+                 WHERE s.workspace_id=w.workspace_id AND s.comparison_website_id=w.id)
+         ORDER BY w.created_at ASC LIMIT ?`)
+        .all(d.workspace_id, original.normalized_domain, scanBudget);
+      for (const row of orphans) {
+        const scanId = newId('scn');
+        db.prepare(`INSERT INTO scans (id, workspace_id, original_website_id, comparison_website_id, status, params, created_by, created_at)
+                    VALUES (?,?,?,?, 'queued', ?, ?, ?)`)
+          .run(scanId, d.workspace_id, original.id, row.id,
+               JSON.stringify({ recrawl: true, maxPages: 10, maxDepth: 1, discovered: true }),
+               d.created_by || null, utcNow());
+        scanner.enqueueScan(scanId);
+        scanBudget--;
+        createdScans++;
+        healedScans++;
+      }
+      if (healedScans) console.warn(`[discover] queued ${healedScans} scan(s) for discovered sites that had none`);
+    }
+
     let skipped = 0;
     for (const u of sites) {
       if (siteBudget <= 0 || scanBudget <= 0) { skipped++; continue; }
@@ -284,12 +343,16 @@ async function runDiscovery(discoveryId, opts = {}) {
     // "Completed" with nothing to compare is not a success the user can act on. Say
     // why in the row, so the screen can explain it instead of sitting on "queued".
     let nothingFoundReason = null;
-    if (registered.length === 0) {
+    if (registered.length === 0 && createdScans > 0) {
+      nothingFoundReason = null;   // work was queued for sites found earlier
+    } else if (registered.length === 0) {
       nothingFoundReason = foundUrls.length === 0
         ? `Search returned no results for ${queriesUsed.length} quoted sentence(s) from your site. Your wording may not appear anywhere else yet.`
         : `Search returned ${foundUrls.length} link(s), but all were your own site, a large platform, or an unsafe address, so none were kept.`;
     } else if (createdScans === 0) {
-      nothingFoundReason = 'The sites found already had a scan running, or the workspace limit for queued scans was reached.';
+      nothingFoundReason = siteBudget <= 0
+        ? `This workspace already tracks ${MAX_DISCOVERED_TOTAL} auto-discovered sites (the limit), so nothing new was added. Remove one you do not need and discovery can add more.`
+        : 'The sites found already had a scan running, or the queue limit was reached.';
     }
 
     db.prepare(`UPDATE discoveries SET status='completed', error=?, provider=?, queries=?, found_hosts=?, created_scan_count=?, finished_at=?, updated_at=? WHERE id=?`)
@@ -301,7 +364,7 @@ async function runDiscovery(discoveryId, opts = {}) {
         createdScans,
         utcNow(), utcNow(), discoveryId
       );
-    audit(d.workspace_id, null, 'discovery.completed', { discoveryId, queries: queriesUsed.length, sites: registered.length, skipped });
+    audit(d.workspace_id, null, 'discovery.completed', { discoveryId, queries: queriesUsed.length, sites: registered.length, skipped, healedScans, archived: trimmed.archived });
   } catch (e) {
     const msg = e.code === 'SEARCH_UNAVAILABLE'
       ? e.message
@@ -321,5 +384,6 @@ function enqueueDiscovery(id) {
 module.exports = {
   runDiscovery, enqueueDiscovery, isRunning,
   splitSentences, pickSearchSentences, filterResultHosts, isBlockedHost,
-  MAX_QUERIES, MAX_SITES
+  trimAutoDiscovered,
+  MAX_QUERIES, MAX_SITES, MAX_DISCOVERED_TOTAL, MAX_PENDING_SCANS
 };

@@ -156,7 +156,19 @@ router.get('/workspaces/:workspaceId/websites/:id/initial-scan', requireWorkspac
   // rendering or search worked, so nothing was ever started. When nothing is
   // running and no comparison exists, take the decision again - initialScan.start()
   // is guarded, so repeated polls cannot stack scans or discovery jobs.
-  const idle = !out.scan && !out.discovery && !(out.comparison && out.comparison.available) && !out.done;
+  // Idle means "no work is moving": no discovery, no live scan, and no real answer
+  // yet. Requiring that no comparison site existed blocked the common case where a
+  // comparison is registered but its scan never started (a restart, a cap, an empty
+  // earlier scan). Those workspaces sat on the same screen forever.
+  const activeScan = !!(out.scan && (out.scan.status === 'queued' || out.scan.status === 'running'));
+  // Bounded on purpose: a site that cannot be compared (blocked, empty, unreachable)
+  // would otherwise be re-queued on every poll, forever. Three automatic attempts an
+  // hour is enough to ride out a cold browser, and after that the screen reports the
+  // last real reason instead of silently retrying.
+  const recentScans = db.prepare(
+    `SELECT COUNT(*) c FROM scans WHERE workspace_id=? AND original_website_id=? AND created_at >= ?`
+  ).get(req.workspace.id, req.params.id, new Date(Date.now() - 60 * 60 * 1000).toISOString()).c;
+  const idle = !activeScan && !out.discovery && !out.done && recentScans < 3;
   if (idle && req.query.auto !== '0') {
     try {
       const started = initialScan.start({ workspaceId: req.workspace.id, siteId: req.params.id, userId: req.user.id });

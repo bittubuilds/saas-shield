@@ -307,3 +307,109 @@ test('a completed discovery that kept nothing records the reason', async () => {
   assert.equal(ownOnly.status, 'completed');
   assert.match(ownOnly.error, /none were kept/i);
 });
+
+// The caps are only useful if old rows cannot lock them shut. Earlier builds added up
+// to six sites per run, so a workspace could carry dozens and then sit at a budget of
+// zero: every run "completed" and added nothing, which is what the screen showed.
+test('a pile of auto-discovered sites is trimmed to the cap', async () => {
+  await ready();
+  const c = client();
+  const wsId = await makeAccount(c);
+  const site = await c(`/workspaces/${wsId}/websites`, { method: 'POST', body: { url: 'http://127.0.0.1:1/', kind: 'original', auto_scan: false } });
+  const origId = site.data.website.id;
+  const orig = db.prepare('SELECT * FROM websites WHERE id=?').get(origId);
+
+  for (let i = 0; i < 12; i++) {
+    db.prepare(`INSERT INTO websites (id, workspace_id, kind, submitted_url, normalized_domain, label, status, crawl_status, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?)`)
+      .run(newId('web'), wsId, 'comparison', `https://pile-${i}.test/`, `pile-${i}.test`,
+           'Found by auto-discovery', 'active', 'crawled', utcNow(), utcNow());
+  }
+  const before = db.prepare(`SELECT COUNT(*) c FROM websites WHERE workspace_id=? AND label='Found by auto-discovery' AND archived_at IS NULL`).get(wsId).c;
+  assert.equal(before, 12);
+
+  const { archived } = discover.trimAutoDiscovered(wsId);
+  assert.equal(archived, 12 - discover.MAX_DISCOVERED_TOTAL);
+  const after = db.prepare(`SELECT COUNT(*) c FROM websites WHERE workspace_id=? AND label='Found by auto-discovery' AND archived_at IS NULL`).get(wsId).c;
+  assert.equal(after, discover.MAX_DISCOVERED_TOTAL, 'the cap is restored instead of staying stuck');
+});
+
+test('discovered sites that never got a scan are given one on the next run', async () => {
+  await ready();
+  const c = client();
+  const wsId = await makeAccount(c);
+  const site = await c(`/workspaces/${wsId}/websites`, { method: 'POST', body: { url: 'http://127.0.0.1:1/', kind: 'original', auto_scan: false } });
+  const origId = site.data.website.id;
+  const orig = db.prepare('SELECT * FROM websites WHERE id=?').get(origId);
+  db.prepare(`INSERT INTO pages (id, website_id, workspace_id, url, submitted_url, canonical_url, title, text_content, meta_description, content_hash, http_status, fetched_at)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(newId('pg'), origId, wsId, 'http://127.0.0.1:1/', orig.submitted_url, null, 'Home',
+         'Our platform helps modern logistics teams coordinate warehouse operations across every facility in real time with predictive arrival windows.',
+         null, 'h1', 200, utcNow());
+
+  // Registered by an earlier run, but no scan row was ever created for it.
+  const stranded = newId('web');
+  db.prepare(`INSERT INTO websites (id, workspace_id, kind, submitted_url, normalized_domain, label, status, crawl_status, created_at, updated_at)
+              VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .run(stranded, wsId, 'comparison', 'https://stranded.test/', 'stranded.test',
+         'Found by auto-discovery', 'active', 'not_crawled', utcNow(), utcNow());
+
+  const id = newId('dsc');
+  db.prepare(`INSERT INTO discoveries (id, workspace_id, original_website_id, status, created_by, created_at, updated_at)
+              VALUES (?,?,?, 'queued', ?, ?, ?)`).run(id, wsId, origId, null, utcNow(), utcNow());
+  await discover.runDiscovery(id, { searchFn: async () => [] });
+
+  const row = db.prepare(`SELECT id FROM scans WHERE workspace_id=? AND comparison_website_id=?`).get(wsId, stranded);
+  assert.ok(row, 'the stranded site finally gets the scan it was promised');
+  const d = db.prepare('SELECT status, error, created_scan_count FROM discoveries WHERE id=?').get(id);
+  assert.equal(d.status, 'completed');
+  assert.ok(d.created_scan_count >= 1);
+});
+
+// A comparison registered but never scanned is the exact state a restart leaves
+// behind. The progress screen must start that scan on its own, not sit on "queued".
+test('the progress poll starts a scan when a comparison exists but nothing is running', async () => {
+  await ready();
+  const c = client();
+  const wsId = await makeAccount(c);
+  const site = await c(`/workspaces/${wsId}/websites`, { method: 'POST', body: { url: 'http://127.0.0.1:1/', kind: 'original', auto_scan: false } });
+  const origId = site.data.website.id;
+
+  // An earlier scan that compared nothing must not block (it is not an answer).
+  const comp = newId('web');
+  db.prepare(`INSERT INTO websites (id, workspace_id, kind, submitted_url, normalized_domain, label, status, crawl_status, created_at, updated_at)
+              VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .run(comp, wsId, 'comparison', 'https://known-copy.test/', 'known-copy.test', null, 'active', 'crawled', utcNow(), utcNow());
+  db.prepare(`INSERT INTO scans (id, workspace_id, original_website_id, comparison_website_id, status, params, pages_compared, findings, created_by, created_at, finished_at)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(newId('scn'), wsId, origId, comp, 'completed', '{}', 0, 0, null, utcNow(), utcNow());
+
+  const res = await c(`/workspaces/${wsId}/websites/${origId}/initial-scan`);
+  assert.equal(res.status, 200);
+  const scan = res.data.scan;
+  assert.ok(scan, 'a scan row is reported');
+  assert.ok(['queued', 'running'].includes(scan.status), `a new scan started, got ${scan.status}`);
+  assert.notEqual(scan.pages_compared, 0, 'the empty earlier scan is not the one being reported');
+});
+
+// A comparison that cannot be crawled must not be retried on every poll forever.
+test('the poll stops starting scans after three automatic attempts in an hour', async () => {
+  await ready();
+  const c = client();
+  const wsId = await makeAccount(c);
+  const site = await c(`/workspaces/${wsId}/websites`, { method: 'POST', body: { url: 'http://127.0.0.1:1/', kind: 'original', auto_scan: false } });
+  const origId = site.data.website.id;
+  const comp = newId('web');
+  db.prepare(`INSERT INTO websites (id, workspace_id, kind, submitted_url, normalized_domain, label, status, crawl_status, created_at, updated_at)
+              VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .run(comp, wsId, 'comparison', 'https://dead-copy.test/', 'dead-copy.test', null, 'active', 'crawled', utcNow(), utcNow());
+  for (let i = 0; i < 3; i++) {
+    db.prepare(`INSERT INTO scans (id, workspace_id, original_website_id, comparison_website_id, status, params, pages_compared, findings, created_by, created_at, finished_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(newId('scn'), wsId, origId, comp, 'completed', '{}', 0, 0, null, utcNow(), utcNow());
+  }
+  const before = db.prepare('SELECT COUNT(*) c FROM scans WHERE workspace_id=?').get(wsId).c;
+  await c(`/workspaces/${wsId}/websites/${origId}/initial-scan`);
+  const after = db.prepare('SELECT COUNT(*) c FROM scans WHERE workspace_id=?').get(wsId).c;
+  assert.equal(after, before, 'no fourth automatic scan is created');
+});
